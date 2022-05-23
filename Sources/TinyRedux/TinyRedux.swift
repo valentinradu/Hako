@@ -7,11 +7,17 @@
 
 import Foundation
 
-public typealias Action = Hashable
-public typealias AnyAction = AnyHashable
 public typealias SideEffect<E> = (E, Dispatch) async -> Void
 public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>? where A: Action
-public typealias Dispatch = (AnyAction) -> Void
+public typealias Dispatch = (any Action) -> Void
+public protocol Action {}
+
+private struct AnyAction: Action {
+    let base: Any
+    public init(_ action: any Action) {
+        base = action
+    }
+}
 
 private struct MappedReducer<S, E> {
     private let _reducer: Reducer<S, AnyAction, E>
@@ -22,7 +28,7 @@ private struct MappedReducer<S, E> {
         where A: Action
     {
         _reducer = { state, action in
-            if let typedAction = action as? A {
+            if let typedAction = action.base as? A {
                 let sideEffect = reducer(&state[keyPath: stateKeyPath], typedAction)
 
                 if let sideEffect = sideEffect {
@@ -38,8 +44,8 @@ private struct MappedReducer<S, E> {
         }
     }
 
-    func callAsFunction(_ state: inout S, _ action: AnyAction) -> SideEffect<E>? {
-        return _reducer(&state, action)
+    func callAsFunction(_ state: inout S, _ action: any Action) -> SideEffect<E>? {
+        return _reducer(&state, AnyAction(action))
     }
 }
 
@@ -47,7 +53,6 @@ public actor Store<S, E> {
     private let _environment: E
     @Published private var _state: S
     private var _reducers: [MappedReducer<S, E>]
-    private var _lastAction: AnyAction?
 
     public init(initialState: S,
                 environment: E)
@@ -55,14 +60,13 @@ public actor Store<S, E> {
         _environment = environment
         _state = initialState
         _reducers = []
-        _lastAction = nil
     }
 
     @_spi(testable)
     public func _getState() -> S {
         _state
     }
-    
+
     @_spi(testable)
     public func _getEnvironment() -> E {
         _environment
@@ -127,9 +131,7 @@ public actor Store<S, E> {
             .assign(to: &publisher)
     }
 
-    public nonisolated func dispatch<A>(action: A)
-        where A: Action
-    {
+    public nonisolated func dispatch(action: any Action) {
         Task {
             let sideEffects = await _dispatch(action: action)
 
@@ -156,14 +158,7 @@ public actor Store<S, E> {
     }
 
     @_spi(testable)
-    public func _dispatch<A>(action: A) -> [SideEffect<E>]
-        where A: Action
-    {
-        if AnyAction(action) == _lastAction {
-            return []
-        }
-        _lastAction = action
-
+    public func _dispatch(action: any Action) -> [SideEffect<E>] {
         var sideEffects: [SideEffect<E>] = []
         for reducer in _reducers {
             if let sideEffect = reducer(&_state, action) {
