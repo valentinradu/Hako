@@ -1,35 +1,33 @@
+//
+//  TinyRedux.swift
+//
+//
+//  Created by Valentin Radu on 22/05/2022.
+//
+
 import Foundation
 
+public typealias Action = Hashable
+public typealias AnyAction = AnyHashable
 public typealias SideEffect<E> = (E, Dispatch) async -> Void
-public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>?
-public typealias Dispatch = (Any) -> Void
-private typealias AnySideEffect = (Any, Dispatch) async -> Void
-private typealias AnyReducer = (inout Any, Any) -> AnySideEffect?
+public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>? where A: Action
+public typealias Dispatch = (AnyAction) -> Void
 
 private struct MappedReducer<S, E> {
-    let stateKeyPath: PartialKeyPath<S>
-    let environmentKeyPath: PartialKeyPath<E>
+    private let _reducer: Reducer<S, AnyAction, E>
 
-    private let _reducer: AnyReducer
-
-    init<S1, A, E1>(state stateKeyPath: KeyPath<S, S1>,
+    init<S1, A, E1>(state stateKeyPath: WritableKeyPath<S, S1>,
                     environment environmentKeyPath: KeyPath<E, E1>,
                     reducer: @escaping Reducer<S1, A, E1>)
+        where A: Action
     {
-        self.stateKeyPath = stateKeyPath
-        self.environmentKeyPath = environmentKeyPath
         _reducer = { state, action in
-            if var typedState = state as? S1,
-               let typedAction = action as? A
-            {
-                let sideEffect = reducer(&typedState, typedAction)
-                state = typedState
+            if let typedAction = action as? A {
+                let sideEffect = reducer(&state[keyPath: stateKeyPath], typedAction)
 
                 if let sideEffect = sideEffect {
                     return { environment, dispatch in
-                        if let typedEnvironment = environment as? E1 {
-                            await sideEffect(typedEnvironment, dispatch)
-                        }
+                        await sideEffect(environment[keyPath: environmentKeyPath], dispatch)
                     }
                 } else {
                     return .none
@@ -40,52 +38,40 @@ private struct MappedReducer<S, E> {
         }
     }
 
-    func callAsFunction(_ state: inout Any, _ action: Any) -> AnySideEffect? {
+    func callAsFunction(_ state: inout S, _ action: AnyAction) -> SideEffect<E>? {
         return _reducer(&state, action)
     }
 }
 
-public class Store<S, E> {
+public actor Store<S, E> {
     private let _environment: E
-    private let _queue: DispatchQueue
     @Published private var _state: S
     private var _reducers: [MappedReducer<S, E>]
+    private var _lastAction: AnyAction?
 
     public init(initialState: S,
                 environment: E)
     {
-        _queue = .init(label: "com.tinyredux.queue",
-                       attributes: .concurrent,
-                       autoreleaseFrequency: .workItem)
         _environment = environment
         _state = initialState
         _reducers = []
+        _lastAction = nil
     }
 
-    private var state: S {
-        get {
-            _queue.sync { _state }
-        }
-        set {
-            _queue.sync(flags: .barrier) { _state = newValue }
-        }
+    @_spi(testable)
+    public func _getState() -> S {
+        _state
+    }
+    
+    @_spi(testable)
+    public func _getEnvironment() -> E {
+        _environment
     }
 
-    private var reducers: [MappedReducer<S, E>] {
-        get {
-            _queue.sync { _reducers }
-        }
-        set {
-            _queue.sync(flags: .barrier) { _reducers = newValue }
-        }
-    }
-
-    private var environment: E {
-        return _environment
-    }
-
-    public func add<A>(reducer: @escaping Reducer<S, A, E>) {
-        reducers.append(
+    public func add<A>(reducer: @escaping Reducer<S, A, E>)
+        where A: Action
+    {
+        _reducers.append(
             MappedReducer(state: \S.self,
                           environment: \E.self,
                           reducer: reducer)
@@ -93,9 +79,10 @@ public class Store<S, E> {
     }
 
     public func add<A, S1>(reducer: @escaping Reducer<S1, A, E>,
-                           state stateKetPath: KeyPath<S, S1>)
+                           state stateKetPath: WritableKeyPath<S, S1>)
+        where A: Action
     {
-        reducers.append(
+        _reducers.append(
             MappedReducer(state: stateKetPath,
                           environment: \E.self,
                           reducer: reducer)
@@ -104,8 +91,9 @@ public class Store<S, E> {
 
     public func add<A, E1>(reducer: @escaping Reducer<S, A, E1>,
                            environment environmentKeyPath: KeyPath<E, E1>)
+        where A: Action
     {
-        reducers.append(
+        _reducers.append(
             MappedReducer(state: \S.self,
                           environment: environmentKeyPath,
                           reducer: reducer)
@@ -113,10 +101,11 @@ public class Store<S, E> {
     }
 
     public func add<A, S1, E1>(reducer: @escaping Reducer<S1, A, E1>,
-                               state stateKetPath: KeyPath<S, S1>,
+                               state stateKetPath: WritableKeyPath<S, S1>,
                                environment environmentKeyPath: KeyPath<E, E1>)
+        where A: Action
     {
-        reducers.append(
+        _reducers.append(
             MappedReducer(state: stateKetPath,
                           environment: environmentKeyPath,
                           reducer: reducer)
@@ -138,19 +127,50 @@ public class Store<S, E> {
             .assign(to: &publisher)
     }
 
-    public func dispatch<A>(action: A) {
-        for reducer in reducers {
-            if let stateKeyPath = reducer.stateKeyPath as? WritableKeyPath<S, Any>,
-               let environmentKeyPath = reducer.environmentKeyPath as? KeyPath<E, Any>
-            {
-                if let sideEffect = reducer(&state[keyPath: stateKeyPath], action) {
-                    let environment = self.environment
-                    let send: Dispatch = self.dispatch
-                    Task.detached {
-                        await sideEffect(environment[keyPath: environmentKeyPath], send)
+    public nonisolated func dispatch<A>(action: A)
+        where A: Action
+    {
+        Task {
+            let sideEffects = await _dispatch(action: action)
+
+            Task.detached { [weak self] in
+                await self?._perform(sideEffects: sideEffects)
+            }
+        }
+    }
+
+    @_spi(testable)
+    public func _perform(sideEffects: [SideEffect<E>]) async {
+        await withTaskGroup(of: Void.self) { [weak self] group in
+            for sideEffect in sideEffects {
+                group.addTask { [weak self] in
+                    if let strongSelf = self {
+                        let dispatch: Dispatch = {
+                            self?.dispatch(action: $0)
+                        }
+                        await sideEffect(strongSelf._environment, dispatch)
                     }
                 }
             }
         }
+    }
+
+    @_spi(testable)
+    public func _dispatch<A>(action: A) -> [SideEffect<E>]
+        where A: Action
+    {
+        if AnyAction(action) == _lastAction {
+            return []
+        }
+        _lastAction = action
+
+        var sideEffects: [SideEffect<E>] = []
+        for reducer in _reducers {
+            if let sideEffect = reducer(&_state, action) {
+                sideEffects.append(sideEffect)
+            }
+        }
+
+        return sideEffects
     }
 }

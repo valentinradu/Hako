@@ -1,44 +1,72 @@
 //
-//  File.swift
+//  Fixtures.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.
 //
 
+import Combine
 import Foundation
 import TinyRedux
 
-enum IdentityAction {
+enum IdentityAction: Action {
     case login
     case logout
     case setUser(User)
 }
 
-enum IdentityState {
+enum IdentityState: Hashable {
     case guest
     case member(User)
+
+    var member: User? {
+        switch self {
+        case .guest:
+            return nil
+        case let .member(user):
+            return user
+        }
+    }
 }
 
-struct User {
+struct User: Hashable {
+    static let main = User(name: "John",
+                           email: "john@localhost.com")
     let name: String
     let email: String
 }
 
-struct IdentityEnvironment {
-    func logout() async {}
+class ProfileViewModel: ObservableObject {
+    @Published var userEmail: String? = "aa"
+}
+
+class IdentityEnvironment {
+    @Published var logoutCalled: Bool = false
+    func logout() async {
+        logoutCalled = true
+    }
 }
 
 struct AppState {
-    let user: IdentityState
+    var identity: IdentityState
+}
+
+struct AppEnvironment {
+    let identity: IdentityEnvironment
+}
+
+extension Publisher {
+    func timeout(_ value: TimeInterval) -> Publishers.Timeout<Self, RunLoop> {
+        timeout(RunLoop.SchedulerTimeType.Stride(value),
+                scheduler: RunLoop.main)
+    }
 }
 
 let identityReducer: Reducer<IdentityState, IdentityAction, IdentityEnvironment> = { state, action in
     switch action {
     case .login:
         return { _, dispatch in
-            let user = User(name: "John",
-                            email: "john@localhost.com")
-            dispatch(IdentityAction.setUser(user))
+            dispatch(IdentityAction.setUser(User.main))
         }
     case let .setUser(user):
         state = .member(user)
