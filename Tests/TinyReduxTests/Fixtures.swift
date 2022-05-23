@@ -13,6 +13,7 @@ enum IdentityAction: Action {
     case login
     case logout
     case setUser(User)
+    case like
 }
 
 enum IdentityState: Hashable {
@@ -31,13 +32,16 @@ enum IdentityState: Hashable {
 
 struct User: Hashable {
     static let main = User(name: "John",
-                           email: "john@localhost.com")
+                           email: "john@localhost.com",
+                           likes: 0)
     let name: String
     let email: String
+    var likes: Int
 }
 
 class ProfileViewModel: ObservableObject {
-    @Published var userEmail: String? = "aa"
+    @Published var userEmail: String?
+    @Published var likes: Int?
 }
 
 class IdentityEnvironment {
@@ -76,5 +80,14 @@ let identityReducer: Reducer<IdentityState, IdentityAction, IdentityEnvironment>
         return { env, _ in
             await env.logout()
         }
+    case .like:
+        switch state {
+        case .guest:
+            break
+        case var .member(user):
+            user.likes += 1
+            state = .member(user)
+        }
+        return .none
     }
 }
