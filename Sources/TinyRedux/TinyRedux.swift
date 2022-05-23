@@ -135,6 +135,7 @@ public class Store<S, E> {
                        to publisher: inout Published<V>.Publisher)
     {
         _statePub
+            .prepend(state)
             .receive(on: RunLoop.main)
             .map { $0[keyPath: keyPath] }
             .assign(to: &publisher)
@@ -142,6 +143,7 @@ public class Store<S, E> {
 
     public func map(_ publisher: inout Published<S>.Publisher) {
         _statePub
+            .prepend(state)
             .receive(on: RunLoop.main)
             .assign(to: &publisher)
     }

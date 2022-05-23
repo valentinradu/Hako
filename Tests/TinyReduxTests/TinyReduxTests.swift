@@ -28,6 +28,22 @@ final class TinyReduxTests: XCTestCase {
         XCTAssertEqual(state.identity, .member(User.main))
     }
 
+    func testMappingInitialState() async throws {
+        let vm = ProfileViewModel()
+        _ = _store._dispatch(action: IdentityAction.setUser(User.main))
+
+        _store.map(\.identity.member?.email,
+                   to: &vm.$userEmail)
+
+        for try await value in vm.$userEmail.timeout(1).asyncStream() {
+            if value == User.main.email {
+                return
+            }
+        }
+
+        XCTFail()
+    }
+
     func testMapping() async throws {
         let vm = ProfileViewModel()
 
