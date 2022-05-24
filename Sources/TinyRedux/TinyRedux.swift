@@ -133,17 +133,22 @@ public class Store<S, E> {
 
     public func map<V>(_ keyPath: KeyPath<S, V>,
                        to publisher: inout Published<V>.Publisher)
+        where V: Equatable
     {
         _statePub
             .prepend(state)
-            .receive(on: RunLoop.main)
             .map { $0[keyPath: keyPath] }
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
             .assign(to: &publisher)
     }
 
-    public func map(_ publisher: inout Published<S>.Publisher) {
+    public func map(_ publisher: inout Published<S>.Publisher)
+        where S: Equatable
+    {
         _statePub
             .prepend(state)
+            .removeDuplicates()
             .receive(on: RunLoop.main)
             .assign(to: &publisher)
     }
