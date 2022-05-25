@@ -1,5 +1,5 @@
 //
-//  TinyRedux.swift
+//  SwiftTinyRedux.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.
@@ -66,7 +66,7 @@ public class Store<S, E> {
         _state = initialState
         _reducers = []
         _statePub = .init()
-        _queue = DispatchQueue(label: "com.tinyredux.queue",
+        _queue = DispatchQueue(label: "com.swifttinyredux.queue",
                                attributes: .concurrent)
     }
 

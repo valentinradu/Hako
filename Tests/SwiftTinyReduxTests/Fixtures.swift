@@ -7,7 +7,7 @@
 
 import Combine
 import Foundation
-import TinyRedux
+import SwiftTinyRedux
 
 enum IdentityAction: Action {
     case login

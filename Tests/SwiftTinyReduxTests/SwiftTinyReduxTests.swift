@@ -1,14 +1,14 @@
 //
-//  TinyReduxTests.swift
+//  SwiftTinyReduxTests.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.
 //
 
-@testable @_spi(testable) import TinyRedux
+@testable @_spi(testable) import SwiftTinyRedux
 import XCTest
 
-final class TinyReduxTests: XCTestCase {
+final class SwiftTinyReduxTests: XCTestCase {
     private var _store: Store<AppState, AppEnvironment>!
 
     override func setUp() {
@@ -79,7 +79,7 @@ final class TinyReduxTests: XCTestCase {
 
     func testMultithreadDispatch() async throws {
         let vm = ProfileViewModel()
-        let queue = DispatchQueue(label: "com.tinyredux.test", attributes: .concurrent)
+        let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
 
         _store.map(\.identity.member?.likes,
                    to: &vm.$likes)
