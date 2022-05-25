@@ -4,7 +4,7 @@
 [![Xcode](https://img.shields.io/badge/Xcode-13-blue.svg?style=for-the-badge&logo=Xcode&logoColor=white)](https://developer.apple.com/xcode)
 [![MIT](https://img.shields.io/badge/license-MIT-black.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-SwiftTinyRedux is a barebone, thread-safe Redux-like container for Swift. It features a minimal API and supports composable reducers. It was designed to bring Redux's core idea in Swift, while being thread-safe and remain unopinionated regarding all other things. This minimal README.md assumes prior Redux (or TCA) knowledge.
+SwiftTinyRedux is a barebone, thread-safe Redux-like container for Swift. It features a minimal API and supports composable reducers. It was designed to bring Redux's core idea to Swift. You can find an article outlining the motivation behind it and the way it works internally [here](https://swiftcraft.io/blog/how-to-build-a-redux-container-from-scratch-in-swift). This minimal README.md assumes prior Redux (or TCA) knowledge.
 
 To set up a container using multiple reducers:
 
