@@ -9,6 +9,10 @@ import Combine
 import Foundation
 import SwiftTinyRedux
 
+enum IdentityError: Error {
+    case unauthenticated
+}
+
 enum IdentityAction: Action {
     case login
     case logout
@@ -53,6 +57,7 @@ class IdentityEnvironment {
 
 struct AppState {
     var identity: IdentityState
+    var errors: [Error]
 }
 
 struct AppEnvironment {
@@ -90,4 +95,13 @@ let identityReducer: Reducer<IdentityState, IdentityAction, IdentityEnvironment>
         }
         return .none
     }
+}
+
+let errorReducer: Reducer<AppState, StoreAction, AppEnvironment> = { state, action in
+    switch action {
+    case let .error(error):
+        state.errors.append(error)
+    }
+
+    return .none
 }

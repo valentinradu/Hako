@@ -8,10 +8,14 @@
 import Combine
 import Foundation
 
-public typealias SideEffect<E> = (E, @escaping Dispatch) async -> Void
+public typealias SideEffect<E> = (E, @escaping Dispatch) async throws -> Void
 public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>? where A: Action
 public typealias Dispatch = (any Action) -> Void
 public protocol Action {}
+
+public enum StoreAction: Action {
+    case error(Error)
+}
 
 private struct AnyAction: Action {
     let base: Any
@@ -35,7 +39,7 @@ public struct MappedReducer<S, E> {
 
                 if let sideEffect = sideEffect {
                     return { environment, dispatch in
-                        await sideEffect(environment[keyPath: environmentKeyPath], dispatch)
+                        try await sideEffect(environment[keyPath: environmentKeyPath], dispatch)
                     }
                 } else {
                     return .none
@@ -169,7 +173,11 @@ public class Store<S, E> {
                         let dispatch: Dispatch = {
                             self?.dispatch(action: $0)
                         }
-                        await sideEffect(strongSelf.environment, dispatch)
+                        do {
+                            try await sideEffect(strongSelf.environment, dispatch)
+                        } catch {
+                            dispatch(StoreAction.error(error))
+                        }
                     }
                 }
             }

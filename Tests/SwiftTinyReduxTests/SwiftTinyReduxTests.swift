@@ -12,13 +12,14 @@ final class SwiftTinyReduxTests: XCTestCase {
     private var _store: Store<AppState, AppEnvironment>!
 
     override func setUp() {
-        let state: AppState = .init(identity: .guest)
+        let state: AppState = .init(identity: .guest, errors: [])
         let env: AppEnvironment = .init(identity: .init())
         _store = Store(initialState: state,
                        environment: env)
         _store.add(reducer: identityReducer,
                    state: \.identity,
                    environment: \.identity)
+        _store.add(reducer: errorReducer)
     }
 
     func testSimpleDispatch() {
@@ -26,6 +27,17 @@ final class SwiftTinyReduxTests: XCTestCase {
         let state = _store.state
         XCTAssertEqual(sideEffects.count, 0)
         XCTAssertEqual(state.identity, .member(User.main))
+    }
+
+    func testThrowDispatch() async {
+        let sideEffect: SideEffect<AppEnvironment> = { _, _ in
+            throw IdentityError.unauthenticated
+        }
+        await _store._perform(sideEffects: [sideEffect])
+
+        let state = _store.state
+        XCTAssertEqual(state.errors.compactMap { $0 as? IdentityError },
+                       [IdentityError.unauthenticated])
     }
 
     func testMappingInitialState() async throws {
