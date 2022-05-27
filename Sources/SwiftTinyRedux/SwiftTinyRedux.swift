@@ -8,7 +8,7 @@
 import Combine
 import Foundation
 
-public typealias SideEffect<E> = (E, Dispatch) async -> Void
+public typealias SideEffect<E> = (E, @escaping Dispatch) async -> Void
 public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>? where A: Action
 public typealias Dispatch = (any Action) -> Void
 public protocol Action {}
