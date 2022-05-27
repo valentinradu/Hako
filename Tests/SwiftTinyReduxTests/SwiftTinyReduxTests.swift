@@ -32,8 +32,9 @@ final class SwiftTinyReduxTests: XCTestCase {
         let vm = ProfileViewModel()
         _ = _store._dispatch(action: IdentityAction.setUser(User.main))
 
-        _store.map(\.identity.member?.email,
-                   to: &vm.$userEmail)
+        _store
+            .watch(\.identity.member?.email)
+            .assign(to: &vm.$userEmail)
 
         for try await value in vm.$userEmail.timeout(1).asyncStream() {
             if value == User.main.email {
@@ -47,8 +48,9 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testMapping() async throws {
         let vm = ProfileViewModel()
 
-        _store.map(\.identity.member?.email,
-                   to: &vm.$userEmail)
+        _store
+            .watch(\.identity.member?.email)
+            .assign(to: &vm.$userEmail)
         let sideEffects = _store._dispatch(action: IdentityAction.setUser(User.main))
 
         XCTAssertEqual(sideEffects.count, 0)
@@ -81,8 +83,10 @@ final class SwiftTinyReduxTests: XCTestCase {
         let vm = ProfileViewModel()
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
 
-        _store.map(\.identity.member?.likes,
-                   to: &vm.$likes)
+        _store
+            .watch(\.identity.member?.likes)
+            .assign(to: &vm.$likes)
+
         _ = _store._dispatch(action: IdentityAction.setUser(User.main))
 
         for _ in 0 ..< 100 {

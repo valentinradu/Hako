@@ -131,8 +131,7 @@ public class Store<S, E> {
         )
     }
 
-    public func map<V>(_ keyPath: KeyPath<S, V>,
-                       to publisher: inout Published<V>.Publisher)
+    public func watch<V>(_ keyPath: KeyPath<S, V>) -> AnyPublisher<V, Never>
         where V: Equatable
     {
         _statePub
@@ -140,17 +139,17 @@ public class Store<S, E> {
             .map { $0[keyPath: keyPath] }
             .removeDuplicates()
             .receive(on: RunLoop.main)
-            .assign(to: &publisher)
+            .eraseToAnyPublisher()
     }
 
-    public func map(_ publisher: inout Published<S>.Publisher)
+    public func watch() -> AnyPublisher<S, Never>
         where S: Equatable
     {
         _statePub
             .prepend(state)
             .removeDuplicates()
             .receive(on: RunLoop.main)
-            .assign(to: &publisher)
+            .eraseToAnyPublisher()
     }
 
     public func dispatch(action: any Action) {
