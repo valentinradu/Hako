@@ -8,50 +8,42 @@
 import Combine
 import Foundation
 
-public typealias SideEffect<E> = (E, @escaping Dispatch) async throws -> Void
-public typealias Reducer<S, A, E> = (inout S, A) -> SideEffect<E>? where A: Action
-public typealias Dispatch = (any Action) -> Void
-public protocol Action {}
-
-public enum StoreAction: Action {
-    case error(Error)
+public typealias SideEffect<E> = (E, Context) async throws -> Void
+public protocol Action {
+    associatedtype S
+    associatedtype E
+    func reduce(state: inout S) -> SideEffect<E>?
 }
 
-private struct AnyAction: Action {
-    let base: Any
-    public init(_ action: any Action) {
-        base = action
+public struct Context {
+    fileprivate typealias Dispatch = (AnyAction) -> Void
+    private let _dispatch: Dispatch
+    
+    fileprivate init(_ dispatch: @escaping Dispatch) {
+        _dispatch = dispatch
+    }
+    
+    public func dispatch<A>(_ action: A) where A: Action {
+        _dispatch(AnyAction(action))
     }
 }
 
-@_spi(testable)
-public struct MappedReducer<S, E> {
-    private let _reducer: Reducer<S, AnyAction, E>
-
-    init<S1, A, E1>(state stateKeyPath: WritableKeyPath<S, S1>,
-                    environment environmentKeyPath: KeyPath<E, E1>,
-                    reducer: @escaping Reducer<S1, A, E1>)
-        where A: Action
-    {
-        _reducer = { state, action in
-            if let typedAction = action.base as? A {
-                let sideEffect = reducer(&state[keyPath: stateKeyPath], typedAction)
-
-                if let sideEffect = sideEffect {
-                    return { environment, dispatch in
-                        try await sideEffect(environment[keyPath: environmentKeyPath], dispatch)
-                    }
-                } else {
-                    return .none
-                }
-            } else {
-                return .none
+public struct AnyAction {
+    private let _execute: (inout Any) -> Any?
+    
+    public init<A>(_ action: A) where A: Action {
+        _execute = {
+            guard var state = $0 as? A.S else {
+                return nil
             }
+            let sideEffect = action.reduce(state: &state)
+            $0 = state
+            return sideEffect
         }
     }
-
-    func callAsFunction(_ state: inout S, _ action: any Action) -> SideEffect<E>? {
-        return _reducer(&state, AnyAction(action))
+    
+    fileprivate func reduce(state: inout Any) -> Any? {
+        _execute(&state)
     }
 }
 
@@ -61,14 +53,12 @@ public class Store<S, E> {
     private let _statePub: PassthroughSubject<S, Never>
 
     private var _state: S
-    private var _reducers: [MappedReducer<S, E>]
 
     public init(initialState: S,
                 environment: E)
     {
         _environment = environment
         _state = initialState
-        _reducers = []
         _statePub = .init()
         _queue = DispatchQueue(label: "com.swifttinyredux.queue",
                                attributes: .concurrent)
@@ -81,58 +71,8 @@ public class Store<S, E> {
     }
 
     @_spi(testable)
-    public var reducers: [MappedReducer<S, E>] {
-        get { _queue.sync { _reducers } }
-        set { _queue.sync(flags: .barrier) { _reducers = newValue } }
-    }
-
-    @_spi(testable)
     public var environment: E {
         _environment
-    }
-
-    public func add<A>(reducer: @escaping Reducer<S, A, E>)
-        where A: Action
-    {
-        reducers.append(
-            MappedReducer(state: \S.self,
-                          environment: \E.self,
-                          reducer: reducer)
-        )
-    }
-
-    public func add<A, S1>(reducer: @escaping Reducer<S1, A, E>,
-                           state stateKetPath: WritableKeyPath<S, S1>)
-        where A: Action
-    {
-        reducers.append(
-            MappedReducer(state: stateKetPath,
-                          environment: \E.self,
-                          reducer: reducer)
-        )
-    }
-
-    public func add<A, E1>(reducer: @escaping Reducer<S, A, E1>,
-                           environment environmentKeyPath: KeyPath<E, E1>)
-        where A: Action
-    {
-        reducers.append(
-            MappedReducer(state: \S.self,
-                          environment: environmentKeyPath,
-                          reducer: reducer)
-        )
-    }
-
-    public func add<A, S1, E1>(reducer: @escaping Reducer<S1, A, E1>,
-                               state stateKetPath: WritableKeyPath<S, S1>,
-                               environment environmentKeyPath: KeyPath<E, E1>)
-        where A: Action
-    {
-        reducers.append(
-            MappedReducer(state: stateKetPath,
-                          environment: environmentKeyPath,
-                          reducer: reducer)
-        )
     }
 
     public func watch<V>(_ keyPath: KeyPath<S, V>) -> AnyPublisher<V, Never>
@@ -156,50 +96,40 @@ public class Store<S, E> {
             .eraseToAnyPublisher()
     }
 
-    public func dispatch(action: any Action) {
-        let sideEffects = _dispatch(action: action)
+    public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E {
+        guard let sideEffect = _dispatch(action: action) else {
+            return
+        }
 
         Task.detached { [weak self] in
-            await self?._perform(sideEffects: sideEffects)
+            await self?._perform(sideEffect: sideEffect)
         }
     }
 
     @_spi(testable)
-    public func _perform(sideEffects: [SideEffect<E>]) async {
-        await withTaskGroup(of: Void.self) { [weak self] group in
-            for sideEffect in sideEffects {
-                group.addTask { [weak self] in
-                    if let strongSelf = self {
-                        let dispatch: Dispatch = {
-                            self?.dispatch(action: $0)
-                        }
-                        do {
-                            try await sideEffect(strongSelf.environment, dispatch)
-                        } catch {
-                            dispatch(StoreAction.error(error))
-                        }
-                    }
-                }
+    public func _perform(sideEffect: SideEffect<E>) async {
+        do {
+            let context = Context {
+                
             }
+            try await sideEffect(environment)
+        } catch {
+//            dispatch(StoreAction.error(error))
+            // what should we do here?
+            fatalError()
         }
     }
 
     @_spi(testable)
-    public func _dispatch(action: any Action) -> [SideEffect<E>] {
-        var sideEffects: [SideEffect<E>] = []
-        for reducer in reducers {
-            var sideEffect: SideEffect<E>?
-            _queue.sync(flags: .barrier) {
-                var state = _state
-                sideEffect = reducer(&state, action)
-                _state = state
-                _statePub.send(_state)
-            }
-            if let sideEffect = sideEffect {
-                sideEffects.append(sideEffect)
-            }
+    public func _dispatch<A>(action: A) -> SideEffect<A.E>? where A: Action, A.S == S, A.E == E {
+        var sideEffect: SideEffect<E>?
+        _queue.sync(flags: .barrier) {
+            var state = _state
+            sideEffect = action.reduce(state: &state)
+            _state = state
+            _statePub.send(_state)
         }
-
-        return sideEffects
+        
+        return sideEffect
     }
 }
