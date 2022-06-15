@@ -13,11 +13,44 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-enum IdentityAction: Action {
-    case login
-    case logout
-    case setUser(User)
-    case like
+typealias IdentitySideEffect = SideEffect<AppState, AppEnvironment, IdentityEnvironment>
+
+struct LoginAction: Action {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+        return { env, dispatch in
+//            dispatch(IdentityAction.setUser(User.main))
+        }
+    }
+}
+
+struct LogoutAction: Action {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+        state = .guest
+        return { env, _ in
+            await env.logout()
+        }
+    }
+}
+
+struct SetUserAction: Action {
+    let user: User
+    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+        state = .member(user)
+        return .none
+    }
+}
+
+struct LikeAction: Action {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+        switch state {
+        case .guest:
+            break
+        case var .member(user):
+            user.likes += 1
+            state = .member(user)
+        }
+        return .none
+    }
 }
 
 enum IdentityState: Hashable {
@@ -43,11 +76,6 @@ struct User: Hashable {
     var likes: Int
 }
 
-class ProfileViewModel: ObservableObject {
-    @Published var userEmail: String?
-    @Published var likes: Int?
-}
-
 class IdentityEnvironment {
     @Published var logoutCalled: Bool = false
     func logout() async {
@@ -69,39 +97,4 @@ extension Publisher {
         timeout(RunLoop.SchedulerTimeType.Stride(value),
                 scheduler: RunLoop.main)
     }
-}
-
-let identityReducer: Reducer<IdentityState, IdentityAction, IdentityEnvironment> = { state, action in
-    switch action {
-    case .login:
-        return { _, dispatch in
-            dispatch(IdentityAction.setUser(User.main))
-        }
-    case let .setUser(user):
-        state = .member(user)
-        return .none
-    case .logout:
-        state = .guest
-        return { env, _ in
-            await env.logout()
-        }
-    case .like:
-        switch state {
-        case .guest:
-            break
-        case var .member(user):
-            user.likes += 1
-            state = .member(user)
-        }
-        return .none
-    }
-}
-
-let errorReducer: Reducer<AppState, StoreAction, AppEnvironment> = { state, action in
-    switch action {
-    case let .error(error):
-        state.errors.append(error)
-    }
-
-    return .none
 }
