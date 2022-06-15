@@ -75,7 +75,7 @@ public struct Store<S, E>: Dispatcher {
                                  environment: environmentKeyPath)
     }
 
-    var state: S {
+    public var state: S {
         _underlyingStore.state
     }
 
