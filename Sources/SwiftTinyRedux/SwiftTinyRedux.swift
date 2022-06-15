@@ -39,13 +39,12 @@ public struct Store<S, E>: Dispatcher {
     }
     
     public func narrow<NS, NE>(state stateKeyPath: WritableKeyPath<S, NS>,
-                               environment environmentKeyPath: KeyPath<E, NE>) -> some Dispatcher {
+                               environment environmentKeyPath: KeyPath<E, NE>) -> _PartialStore<OS, OE, NS, NE> {
         _underlyingStore.narrow(state: stateKeyPath,
                                 environment: environmentKeyPath)
     }
 }
 
-@_spi(testable)
 public struct _PartialStore<OS, OE, S, E>: Dispatcher {
     private let _origin: StoreState<OS, OE>
     private let _stateKeyPath: WritableKeyPath<OS, S>
@@ -70,7 +69,7 @@ public struct _PartialStore<OS, OE, S, E>: Dispatcher {
     }
     
     func narrow<NS, NE>(state stateKeyPath: WritableKeyPath<OS, NS>,
-                        environment environmentKeyPath: KeyPath<OE, NE>) -> some Dispatcher {
+                        environment environmentKeyPath: KeyPath<OE, NE>) -> _PartialStore<OS, OE, NS, NE> {
         _PartialStore<OS, OE, NS, NE>(origin: _origin,
                               state: stateKeyPath,
                               environment: environmentKeyPath)

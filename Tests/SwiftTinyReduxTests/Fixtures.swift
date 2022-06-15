@@ -15,10 +15,18 @@ enum IdentityError: Error {
 
 typealias IdentitySideEffect = SideEffect<AppState, AppEnvironment, IdentityEnvironment>
 
+extension Action where Self == SetUserAction {
+    static func setUser(_ user: User) -> Self {
+        SetUserAction(user: user)
+    }
+}
+
 struct LoginAction: Action {
     func reduce(state: inout IdentityState) -> IdentitySideEffect? {
-        return { env, dispatch in
-//            dispatch(IdentityAction.setUser(User.main))
+        return { env, store in
+            let store = store.narrow(state: \.identity,
+                                     environment: \.identity)
+            store.dispatch(action: .setUser(.main))
         }
     }
 }
