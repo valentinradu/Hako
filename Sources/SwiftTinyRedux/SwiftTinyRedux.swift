@@ -115,7 +115,7 @@ public struct _PartialStore<OS, OE, S, E>: Dispatcher {
         _context.state[keyPath: _stateKeyPath]
     }
 
-    public var environment: E {
+    var environment: E {
         _context.environment[keyPath: _environmentKeyPath]
     }
 
@@ -174,7 +174,7 @@ public class StoreContext<S, E>: ObservableObject {
         }
     }
 
-    public var environment: E {
+    var environment: E {
         _queue.sync { _environment }
     }
 
