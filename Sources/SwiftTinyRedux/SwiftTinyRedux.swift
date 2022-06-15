@@ -167,7 +167,7 @@ public class StoreContext<S, E>: ObservableObject {
                                attributes: .concurrent)
     }
 
-    fileprivate var state: S {
+    public private(set) var state: S {
         get { _queue.sync { _state } }
         set {
             if Thread.isMainThread {
@@ -187,7 +187,7 @@ public class StoreContext<S, E>: ObservableObject {
         }
     }
 
-    fileprivate var environment: E {
+    public var environment: E {
         _queue.sync { _environment }
     }
 

@@ -10,15 +10,16 @@ import XCTest
 
 final class SwiftTinyReduxTests: XCTestCase {
     private var _store: Store<AppState, AppEnvironment>!
+    private var _context: StoreContext<AppState, AppEnvironment>!
 
     override func setUp() {
         let state: AppState = .init(identity: .guest, errors: [])
         let env: AppEnvironment = .init(identity: .init())
-        let context = StoreContext(state: state, environment: env)
         let errorSideEffect = AnyErrorSideEffect { error, store in
             store.dispatch(action: ShowAlert(error: error))
         }
-        _store = Store(context: context, errorSideEffects: [errorSideEffect])
+        _context = StoreContext(state: state, environment: env)
+        _store = Store(context: _context, errorSideEffects: [errorSideEffect])
     }
 
     func testSimpleDispatch() {
@@ -28,35 +29,38 @@ final class SwiftTinyReduxTests: XCTestCase {
         XCTAssertNil(sideEffects)
         XCTAssertEqual(store.state, .member(User.main))
     }
-//
-//    func testThrowDispatch() async {
-//        let sideEffect: SideEffect<AppEnvironment> = { _, _ in
-//            throw IdentityError.unauthenticated
-//        }
-//        await _store._perform(sideEffects: [sideEffect])
-//
-//        let state = _store.state
-//        XCTAssertEqual(state.errors.compactMap { $0 as? IdentityError },
-//                       [IdentityError.unauthenticated])
-//    }
-//
-//    func testMappingInitialState() async throws {
-//        let vm = ProfileViewModel()
-//        _ = _store._dispatch(action: IdentityAction.setUser(User.main))
-//
-//        _store
-//            .watch(\.identity.member?.email)
-//            .assign(to: &vm.$userEmail)
-//
-//        for try await value in vm.$userEmail.timeout(1).asyncStream() {
-//            if value == User.main.email {
-//                return
+
+    func testThrowDispatch() async {
+        let sideEffect: AppSideEffect = { _, _ in
+            throw IdentityError.unauthenticated
+        }
+        let store = _store.partial(state: \.self, environment: \.self)
+        await store._perform(sideEffect: sideEffect)
+
+        let state = _store.state
+        XCTAssertEqual(state.errors.compactMap { $0 as? IdentityError },
+                       [IdentityError.unauthenticated])
+    }
+
+//    func testPublishedState() async throws {
+//        let store = _store.partial(state: \.identity, environment: \.identity)
+//        var
+//        _context.objectWillChange
+//            .sink {
+//                if _context.state.identity == .member(.main) {
+//                    return
+//                }
 //            }
-//        }
+//        
+//        store.dispatch(action: SetUserAction(user: .main))
 //
+//        for try await _ in .values {
+//            
+//        }
+//        
 //        XCTFail()
 //    }
-//
+
 //    func testMapping() async throws {
 //        let vm = ProfileViewModel()
 //

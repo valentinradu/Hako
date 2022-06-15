@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "SwiftTinyRedux",
     platforms: [
-        .iOS(.v14), .macOS(.v11), .tvOS(.v9),
+        .iOS(.v15), .macOS(.v11), .tvOS(.v9),
         .macCatalyst(.v13), .watchOS(.v2),
     ],
     products: [
