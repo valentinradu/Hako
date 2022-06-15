@@ -14,19 +14,14 @@ enum IdentityError: Error {
 }
 
 typealias IdentitySideEffect = SideEffect<AppState, AppEnvironment, IdentityEnvironment>
-
-extension Action where Self == SetUserAction {
-    static func setUser(_ user: User) -> Self {
-        SetUserAction(user: user)
-    }
-}
+typealias AppSideEffect = SideEffect<AppState, AppEnvironment, AppEnvironment>
 
 struct LoginAction: Action {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
-        return { env, store in
-            let store = store.narrow(state: \.identity,
-                                     environment: \.identity)
-            store.dispatch(action: .setUser(.main))
+    func reduce(state _: inout IdentityState) -> IdentitySideEffect? {
+        return { _, store in
+            let store = store.partial(state: \.identity,
+                                      environment: \.identity)
+            store.dispatch(action: SetUserAction(user: .main))
         }
     }
 }
@@ -57,6 +52,14 @@ struct LikeAction: Action {
             user.likes += 1
             state = .member(user)
         }
+        return .none
+    }
+}
+
+struct ShowAlert: Action {
+    let error: Error
+    func reduce(state: inout AppState) -> AppSideEffect? {
+        state.errors.append(error)
         return .none
     }
 }

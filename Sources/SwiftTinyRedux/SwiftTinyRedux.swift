@@ -9,6 +9,7 @@ import Combine
 import Foundation
 
 public typealias SideEffect<OS, OE, E> = (E, Store<OS, OE>) async throws -> Void
+public typealias ErrorSideEffect<OS, OE> = (Error, Store<OS, OE>) async -> Void
 public protocol Action {
     associatedtype S
     associatedtype E
@@ -16,6 +17,7 @@ public protocol Action {
     associatedtype OE
     func reduce(state: inout S) -> SideEffect<OS, OE, E>?
 }
+
 public protocol Dispatcher {
     associatedtype S
     associatedtype E
@@ -24,38 +26,79 @@ public protocol Dispatcher {
     func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE
 }
 
+public struct AnyAction<OS, OE, S, E>: Action {
+    private var _reduce: (inout S) -> SideEffect<OS, OE, E>?
+    public init<A>(_ action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
+        _reduce = action.reduce
+    }
+
+    public func reduce(state: inout S) -> SideEffect<OS, OE, E>? {
+        _reduce(&state)
+    }
+}
+
+public struct AnyErrorSideEffect<OS, OE> {
+    private var _sideEfect: ErrorSideEffect<OS, OE>
+    public init(_ sideEffect: @escaping ErrorSideEffect<OS, OE>) {
+        _sideEfect = sideEffect
+    }
+
+    public func perform(error: Error, store: Store<OS, OE>) async {
+        await _sideEfect(error, store)
+    }
+}
+
 public struct Store<S, E>: Dispatcher {
     public typealias OS = S
     public typealias OE = E
     private let _underlyingStore: _PartialStore<S, E, S, E>
-    
-    public init(origin: StoreState<S, E>) {
-        _underlyingStore = _PartialStore(origin: origin, state: \.self,
+    private let _errorSideEffects: [AnyErrorSideEffect<S, E>]
+
+    public init(context: StoreContext<S, E>,
+                errorSideEffects: [AnyErrorSideEffect<S, E>] = [])
+    {
+        _underlyingStore = _PartialStore(context: context,
+                                         errorSideEffects: errorSideEffects,
+                                         state: \.self,
                                          environment: \.self)
+        _errorSideEffects = errorSideEffects
     }
-    
+
     public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
         _underlyingStore.dispatch(action: action)
     }
-    
-    public func narrow<NS, NE>(state stateKeyPath: WritableKeyPath<S, NS>,
-                               environment environmentKeyPath: KeyPath<E, NE>) -> _PartialStore<OS, OE, NS, NE> {
-        _underlyingStore.narrow(state: stateKeyPath,
-                                environment: environmentKeyPath)
+
+    public func partial<NS, NE>(state stateKeyPath: WritableKeyPath<S, NS>,
+                                environment environmentKeyPath: KeyPath<E, NE>) -> _PartialStore<OS, OE, NS, NE>
+    {
+        _underlyingStore.partial(state: stateKeyPath,
+                                 environment: environmentKeyPath)
+    }
+
+    public var state: S {
+        _underlyingStore.state
+    }
+
+    public var environment: E {
+        _underlyingStore.environment
     }
 }
 
 public struct _PartialStore<OS, OE, S, E>: Dispatcher {
-    private let _origin: StoreState<OS, OE>
+    private let _context: StoreContext<OS, OE>
     private let _stateKeyPath: WritableKeyPath<OS, S>
     private let _environmentKeyPath: KeyPath<OE, E>
-    
-    init(origin: StoreState<OS, OE>,
-                state stateKeyPath: WritableKeyPath<OS, S>,
-                environment environmentKeyPath: KeyPath<OE, E>) {
-        _origin = origin
+    private let _errorSideEffects: [AnyErrorSideEffect<OS, OE>]
+
+    init(context: StoreContext<OS, OE>,
+         errorSideEffects: [AnyErrorSideEffect<OS, OE>],
+         state stateKeyPath: WritableKeyPath<OS, S>,
+         environment environmentKeyPath: KeyPath<OE, E>)
+    {
+        _context = context
         _stateKeyPath = stateKeyPath
         _environmentKeyPath = environmentKeyPath
+        _errorSideEffects = errorSideEffects
     }
 
     public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
@@ -67,64 +110,90 @@ public struct _PartialStore<OS, OE, S, E>: Dispatcher {
             await self._perform(sideEffect: sideEffect)
         }
     }
-    
-    func narrow<NS, NE>(state stateKeyPath: WritableKeyPath<OS, NS>,
-                        environment environmentKeyPath: KeyPath<OE, NE>) -> _PartialStore<OS, OE, NS, NE> {
-        _PartialStore<OS, OE, NS, NE>(origin: _origin,
-                              state: stateKeyPath,
-                              environment: environmentKeyPath)
+
+    public var state: S {
+        _context.state[keyPath: _stateKeyPath]
+    }
+
+    public var environment: E {
+        _context.environment[keyPath: _environmentKeyPath]
+    }
+
+    func partial<NS, NE>(state stateKeyPath: WritableKeyPath<OS, NS>,
+                         environment environmentKeyPath: KeyPath<OE, NE>) -> _PartialStore<OS, OE, NS, NE>
+    {
+        _PartialStore<OS, OE, NS, NE>(context: _context,
+                                      errorSideEffects: _errorSideEffects,
+                                      state: stateKeyPath,
+                                      environment: environmentKeyPath)
     }
 
     func _perform(sideEffect: SideEffect<OS, OE, E>) async {
+        let environment = _context.environment[keyPath: _environmentKeyPath]
+        let store = Store<OS, OE>(context: _context, errorSideEffects: _errorSideEffects)
         do {
-            let environment = _origin.environment[keyPath: _environmentKeyPath]
-            let store = Store<OS, OE>(origin: _origin)
             try await sideEffect(environment, store)
-        } catch {
-//            dispatch(StoreAction.error(error))
-            // what should we do here?
-            fatalError()
+        }
+        catch {
+            for errorSideEffect in _errorSideEffects {
+                await errorSideEffect.perform(error: error, store: store)
+            }
         }
     }
 
     func _dispatch<A>(action: A) -> SideEffect<OS, OE, E>? where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
         var sideEffect: SideEffect<OS, OE, E>?
-        _origin.perform {
-            var state = _origin.state[keyPath: _stateKeyPath]
+        _context.perform { oldState in
+            var state = oldState[keyPath: _stateKeyPath]
             sideEffect = action.reduce(state: &state)
-            _origin.state[keyPath: _stateKeyPath] = state
+            oldState[keyPath: _stateKeyPath] = state
         }
         return sideEffect
     }
 }
 
-public class StoreState<S, E> {
+public class StoreContext<S, E>: ObservableObject {
     private let _environment: E
     private let _queue: DispatchQueue
 
-    private var _wrappedValue: S
+    private var _state: S
 
-    public init(wrappedValue: S,
+    public init(state: S,
                 environment: E)
     {
         _environment = environment
-        _wrappedValue = wrappedValue
+        _state = state
         _queue = DispatchQueue(label: "com.swifttinyredux.queue",
                                attributes: .concurrent)
     }
 
-    public var state: S {
-        get { _queue.sync { _wrappedValue } }
-        set { _queue.sync(flags: .barrier) { _wrappedValue = newValue } }
+    fileprivate var state: S {
+        get { _queue.sync { _state } }
+        set {
+            if Thread.isMainThread {
+                objectWillChange.send()
+                _queue.sync(flags: .barrier) {
+                    _state = newValue
+                }
+            }
+            else {
+                DispatchQueue.main.sync {
+                    objectWillChange.send()
+                    _queue.sync(flags: .barrier) {
+                        _state = newValue
+                    }
+                }
+            }
+        }
     }
 
     fileprivate var environment: E {
         _queue.sync { _environment }
     }
-    
-    fileprivate func perform(_ update: () -> Void) {
+
+    fileprivate func perform(_ update: (inout S) -> Void) {
         _queue.sync(flags: .barrier) {
-            update()
+            update(&_state)
         }
     }
 }

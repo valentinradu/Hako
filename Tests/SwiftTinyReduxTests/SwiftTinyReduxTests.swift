@@ -5,24 +5,29 @@
 //  Created by Valentin Radu on 22/05/2022.
 //
 
-@testable @_spi(testable) import SwiftTinyRedux
+@testable import SwiftTinyRedux
 import XCTest
 
 final class SwiftTinyReduxTests: XCTestCase {
     private var _store: Store<AppState, AppEnvironment>!
 
     override func setUp() {
-//        let state: AppState = .init(identity: .guest, errors: [])
-//        let env: AppEnvironment = .init(identity: .init())
-//        let state = StoreState(wrappedValue: state, environment: env)
+        let state: AppState = .init(identity: .guest, errors: [])
+        let env: AppEnvironment = .init(identity: .init())
+        let context = StoreContext(state: state, environment: env)
+        let errorSideEffect = AnyErrorSideEffect { error, store in
+            store.dispatch(action: ShowAlert(error: error))
+        }
+        _store = Store(context: context, errorSideEffects: [errorSideEffect])
     }
 
-//    func testSimpleDispatch() {
-//        let sideEffects = _store._dispatch(action: IdentityAction.setUser(User.main))
-//        let state = _store.state
-//        XCTAssertEqual(sideEffects.count, 0)
-//        XCTAssertEqual(state.identity, .member(User.main))
-//    }
+    func testSimpleDispatch() {
+        let store = _store.partial(state: \.identity, environment: \.identity)
+        let sideEffects = store._dispatch(action: SetUserAction(user: .main))
+
+        XCTAssertNil(sideEffects)
+        XCTAssertEqual(store.state, .member(User.main))
+    }
 //
 //    func testThrowDispatch() async {
 //        let sideEffect: SideEffect<AppEnvironment> = { _, _ in
