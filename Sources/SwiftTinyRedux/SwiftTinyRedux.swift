@@ -170,20 +170,7 @@ public class StoreContext<S, E>: ObservableObject {
     public private(set) var state: S {
         get { _queue.sync { _state } }
         set {
-            if Thread.isMainThread {
-                objectWillChange.send()
-                _queue.sync(flags: .barrier) {
-                    _state = newValue
-                }
-            }
-            else {
-                DispatchQueue.main.sync {
-                    objectWillChange.send()
-                    _queue.sync(flags: .barrier) {
-                        _state = newValue
-                    }
-                }
-            }
+            perform { $0 = newValue }
         }
     }
 
@@ -191,9 +178,20 @@ public class StoreContext<S, E>: ObservableObject {
         _queue.sync { _environment }
     }
 
-    fileprivate func perform(_ update: (inout S) -> Void) {
-        _queue.sync(flags: .barrier) {
-            update(&_state)
+    fileprivate func perform(update: (inout S) -> Void) {
+        if Thread.isMainThread {
+            objectWillChange.send()
+            _queue.sync(flags: .barrier) {
+                update(&_state)
+            }
+        }
+        else {
+            DispatchQueue.main.sync {
+                objectWillChange.send()
+                _queue.sync(flags: .barrier) {
+                    update(&_state)
+                }
+            }
         }
     }
 }

@@ -5,6 +5,7 @@
 //  Created by Valentin Radu on 22/05/2022.
 //
 
+import Combine
 @testable import SwiftTinyRedux
 import XCTest
 
@@ -42,81 +43,64 @@ final class SwiftTinyReduxTests: XCTestCase {
                        [IdentityError.unauthenticated])
     }
 
-//    func testPublishedState() async throws {
-//        let store = _store.partial(state: \.identity, environment: \.identity)
-//        var
-//        _context.objectWillChange
-//            .sink {
-//                if _context.state.identity == .member(.main) {
-//                    return
-//                }
-//            }
-//
-//        store.dispatch(action: SetUserAction(user: .main))
-//
-//        for try await _ in .values {
-//
-//        }
-//
-//        XCTFail()
-//    }
+    func testPublishedState() async throws {
+        let store = _store.partial(state: \.identity, environment: \.identity)
+        var cancellables: Set<AnyCancellable> = []
+        var wasCalledOnMainThread = false
+        _context.objectWillChange
+            .sink {
+                wasCalledOnMainThread = Thread.isMainThread
+            }
+            .store(in: &cancellables)
 
-//    func testMapping() async throws {
-//        let vm = ProfileViewModel()
-//
-//        _store
-//            .watch(\.identity.member?.email)
-//            .assign(to: &vm.$userEmail)
-//        let sideEffects = _store._dispatch(action: IdentityAction.setUser(User.main))
-//
-//        XCTAssertEqual(sideEffects.count, 0)
-//        for try await value in vm.$userEmail.timeout(1).asyncStream() {
-//            if value == User.main.email {
-//                return
-//            }
-//        }
-//
-//        XCTFail()
-//    }
-//
-//    func testPerformSideEffects() async throws {
-//        let sideEffects = _store._dispatch(action: IdentityAction.logout)
-//        await _store._perform(sideEffects: sideEffects)
-//
-//        XCTAssertEqual(sideEffects.count, 1)
-//        let environment = _store.environment
-//
-//        for try await value in environment.identity.$logoutCalled.timeout(1).asyncStream() {
-//            if value {
-//                return
-//            }
-//        }
-//
-//        XCTFail()
-//    }
-//
-//    func testMultithreadDispatch() async throws {
-//        let vm = ProfileViewModel()
-//        let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
-//
-//        _store
-//            .watch(\.identity.member?.likes)
-//            .assign(to: &vm.$likes)
-//
-//        _ = _store._dispatch(action: IdentityAction.setUser(User.main))
-//
-//        for _ in 0 ..< 100 {
-//            queue.async { [unowned self] in
-//                _ = _store._dispatch(action: IdentityAction.like)
-//            }
-//        }
-//
-//        for try await value in vm.$likes.timeout(1).asyncStream() {
-//            if value == 100 {
-//                return
-//            }
-//        }
-//
-//        XCTFail()
-//    }
+        store.dispatch(action: SetUserAction(user: .main))
+
+        XCTAssertTrue(wasCalledOnMainThread)
+        XCTAssertEqual(store.state, .member(User.main))
+    }
+
+    func testPerformSideEffects() async throws {
+        let store = _store.partial(state: \.identity, environment: \.identity)
+        var cancellables: Set<AnyCancellable> = []
+        var logoutCalled = false
+        store.environment.$logoutCalled
+            .sink {
+                logoutCalled = $0
+            }
+            .store(in: &cancellables)
+
+        guard let sideEffect = store._dispatch(action: LogoutAction()) else {
+            XCTFail()
+            return
+        }
+
+        await store._perform(sideEffect: sideEffect)
+
+        XCTAssertTrue(logoutCalled)
+    }
+
+    func testMultithreadDispatch() async throws {
+        let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
+        var cancellables: Set<AnyCancellable> = []
+        let expectation = XCTestExpectation()
+        var likeCount = 0
+        _context.objectWillChange
+            .sink {
+                likeCount += 1
+                if likeCount == 100 {
+                    expectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+
+        let store = _store.partial(state: \.identity, environment: \.identity)
+
+        for _ in 0 ..< 100 {
+            queue.async {
+                store.dispatch(action: LikeAction())
+            }
+        }
+
+        wait(for: [expectation], timeout: 1)
+    }
 }
