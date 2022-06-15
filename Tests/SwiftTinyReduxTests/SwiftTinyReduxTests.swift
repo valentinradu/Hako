@@ -51,13 +51,13 @@ final class SwiftTinyReduxTests: XCTestCase {
 //                    return
 //                }
 //            }
-//        
+//
 //        store.dispatch(action: SetUserAction(user: .main))
 //
 //        for try await _ in .values {
-//            
+//
 //        }
-//        
+//
 //        XCTFail()
 //    }
 
