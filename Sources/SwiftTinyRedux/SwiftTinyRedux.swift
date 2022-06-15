@@ -51,16 +51,16 @@ public struct AnyErrorSideEffect<OS, OE> {
 public struct Store<S, E>: Dispatcher {
     public typealias OS = S
     public typealias OE = E
-    private let _underlyingStore: _PartialStore<S, E, S, E>
+    private let _underlyingStore: PartialStore<S, E, S, E>
     private let _errorSideEffects: [AnyErrorSideEffect<S, E>]
 
     public init(context: StoreContext<S, E>,
                 errorSideEffects: [AnyErrorSideEffect<S, E>] = [])
     {
-        _underlyingStore = _PartialStore(context: context,
-                                         errorSideEffects: errorSideEffects,
-                                         state: \.self,
-                                         environment: \.self)
+        _underlyingStore = PartialStore(context: context,
+                                        errorSideEffects: errorSideEffects,
+                                        state: \.self,
+                                        environment: \.self)
         _errorSideEffects = errorSideEffects
     }
 
@@ -69,7 +69,7 @@ public struct Store<S, E>: Dispatcher {
     }
 
     public func partial<NS, NE>(state stateKeyPath: WritableKeyPath<S, NS>,
-                                environment environmentKeyPath: KeyPath<E, NE>) -> _PartialStore<OS, OE, NS, NE>
+                                environment environmentKeyPath: KeyPath<E, NE>) -> PartialStore<OS, OE, NS, NE>
     {
         _underlyingStore.partial(state: stateKeyPath,
                                  environment: environmentKeyPath)
@@ -84,7 +84,7 @@ public struct Store<S, E>: Dispatcher {
     }
 }
 
-public struct _PartialStore<OS, OE, S, E>: Dispatcher {
+public struct PartialStore<OS, OE, S, E>: Dispatcher {
     private let _context: StoreContext<OS, OE>
     private let _stateKeyPath: WritableKeyPath<OS, S>
     private let _environmentKeyPath: KeyPath<OE, E>
@@ -120,12 +120,12 @@ public struct _PartialStore<OS, OE, S, E>: Dispatcher {
     }
 
     func partial<NS, NE>(state stateKeyPath: WritableKeyPath<OS, NS>,
-                         environment environmentKeyPath: KeyPath<OE, NE>) -> _PartialStore<OS, OE, NS, NE>
+                         environment environmentKeyPath: KeyPath<OE, NE>) -> PartialStore<OS, OE, NS, NE>
     {
-        _PartialStore<OS, OE, NS, NE>(context: _context,
-                                      errorSideEffects: _errorSideEffects,
-                                      state: stateKeyPath,
-                                      environment: environmentKeyPath)
+        PartialStore<OS, OE, NS, NE>(context: _context,
+                                     errorSideEffects: _errorSideEffects,
+                                     state: stateKeyPath,
+                                     environment: environmentKeyPath)
     }
 
     func _perform(sideEffect: SideEffect<OS, OE, E>) async {
