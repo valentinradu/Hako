@@ -84,6 +84,14 @@ public struct Store<S, E>: Dispatcher {
     }
 }
 
+public extension Store {
+    init(state: S, environment: E) {
+        let context = StoreContext(state: state,
+                                   environment: environment)
+        self.init(context: context)
+    }
+}
+
 public struct PartialStore<OS, OE, S, E>: Dispatcher {
     private let _context: StoreContext<OS, OE>
     private let _stateKeyPath: WritableKeyPath<OS, S>
