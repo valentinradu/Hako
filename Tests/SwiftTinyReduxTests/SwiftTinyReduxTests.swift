@@ -78,6 +78,18 @@ final class SwiftTinyReduxTests: XCTestCase {
 
         XCTAssertTrue(logoutCalled)
     }
+    
+    func testCustomDispatch() async throws {
+        var action = LogoutAction()
+        let store = Store(context: _context) {
+            action = $0
+        }
+        let identityStore = store.partial(state: \.identity, environment: \.identity)
+        
+        identityStore.dispatch(action: LikeAction())
+        
+        
+    }
 
     func testMultithreadDispatch() async throws {
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)

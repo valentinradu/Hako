@@ -48,6 +48,8 @@ public struct AnyErrorSideEffect<OS, OE> {
     }
 }
 
+public typealias Dispatch<OS, OE, S, E> = (AnyAction<OS, OE, S, E>) -> Void
+
 public struct Store<S, E>: Dispatcher {
     public typealias OS = S
     public typealias OE = E
@@ -55,10 +57,12 @@ public struct Store<S, E>: Dispatcher {
     private let _errorSideEffects: [AnyErrorSideEffect<S, E>]
 
     public init(context: StoreContext<S, E>,
-                errorSideEffects: [AnyErrorSideEffect<S, E>] = [])
+                errorSideEffects: [AnyErrorSideEffect<S, E>] = [],
+                dispatch: Dispatch<OS, OE, S, E>? = nil)
     {
         _underlyingStore = PartialStore(context: context,
                                         errorSideEffects: errorSideEffects,
+                                        dispatch: dispatch,
                                         state: \.self,
                                         environment: \.self)
         _errorSideEffects = errorSideEffects
@@ -97,9 +101,11 @@ public struct PartialStore<OS, OE, S, E>: Dispatcher {
     private let _stateKeyPath: WritableKeyPath<OS, S>
     private let _environmentKeyPath: KeyPath<OE, E>
     private let _errorSideEffects: [AnyErrorSideEffect<OS, OE>]
+    private let _dispatch: Dispatch<OS, OE, S, E>?
 
     init(context: StoreContext<OS, OE>,
          errorSideEffects: [AnyErrorSideEffect<OS, OE>],
+         dispatch: Dispatch<OS, OE, S, E>?,
          state stateKeyPath: WritableKeyPath<OS, S>,
          environment environmentKeyPath: KeyPath<OE, E>)
     {
@@ -107,15 +113,21 @@ public struct PartialStore<OS, OE, S, E>: Dispatcher {
         _stateKeyPath = stateKeyPath
         _environmentKeyPath = environmentKeyPath
         _errorSideEffects = errorSideEffects
+        _dispatch = dispatch
     }
 
     public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
-        guard let sideEffect = _dispatch(action: action) else {
-            return
+        if let dispatch = _dispatch {
+            dispatch(AnyAction(action))
         }
+        else {
+            guard let sideEffect = _dispatch(action: action) else {
+                return
+            }
 
-        Task.detached {
-            await self._perform(sideEffect: sideEffect)
+            Task.detached {
+                await self._perform(sideEffect: sideEffect)
+            }
         }
     }
 
@@ -132,6 +144,7 @@ public struct PartialStore<OS, OE, S, E>: Dispatcher {
     {
         PartialStore<OS, OE, NS, NE>(context: _context,
                                      errorSideEffects: _errorSideEffects,
+                                     dispatch: _dispatch,
                                      state: stateKeyPath,
                                      environment: environmentKeyPath)
     }
