@@ -36,7 +36,7 @@ public struct SideEffect<E> {
         }
     }
 
-    fileprivate func perform(environment: E) async -> AnyMutation? {
+    public func perform(environment: E) async -> AnyMutation? {
         await _perform(environment)
     }
 }
@@ -171,6 +171,56 @@ public class StoreContext<S, E>: ObservableObject where S: Equatable {
     }
 }
 
+public struct AnyMutation {
+    private let _reduce: (Any, Any) -> Bool
+    public let _base: Any
+
+    public init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
+        _base = mutation
+        _reduce = { context, coordinator in
+            guard let context = context as? AnyContext<M.S>,
+                  let environment = context.environment as? E,
+                  let coordinator = coordinator as? StoreCoordinator
+            else {
+                return false
+            }
+
+            let sideEffect = context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            Task.detached { [environment] in
+                guard let nextMutation = await sideEffect.perform(environment: environment) else {
+                    return
+                }
+
+                _ = coordinator.reduce(nextMutation)
+            }
+
+            return true
+        }
+    }
+
+    public init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
+        _base = mutation
+        _reduce = { context, _ in
+            guard let context = context as? AnyContext<M.S> else {
+                return false
+            }
+
+            context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            return true
+        }
+    }
+
+    func reduce(context: Any, coordinator: Any) -> Bool {
+        _reduce(context, coordinator)
+    }
+}
+
 private struct AnyContext<S> where S: Equatable {
     private let _perform: ((inout S) -> Any) -> Any
     private let _environment: Any
@@ -198,53 +248,6 @@ private struct AnyContext<S> where S: Equatable {
 
     func perform<R>(update: (inout S) -> R) -> R {
         _perform(update) as! R
-    }
-}
-
-private struct AnyMutation {
-    private let _reduce: (Any, Any) -> Bool
-
-    init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
-        _reduce = { context, coordinator in
-            guard let context = context as? AnyContext<M.S>,
-                  let environment = context.environment as? E,
-                  let coordinator = coordinator as? StoreCoordinator
-            else {
-                return false
-            }
-
-            let sideEffect = context.perform { oldState in
-                mutation.reduce(state: &oldState)
-            }
-
-            Task.detached { [environment] in
-                guard let nextMutation = await sideEffect.perform(environment: environment) else {
-                    return
-                }
-
-                _ = coordinator.reduce(nextMutation)
-            }
-
-            return true
-        }
-    }
-
-    init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
-        _reduce = { context, _ in
-            guard let context = context as? AnyContext<M.S> else {
-                return false
-            }
-
-            context.perform { oldState in
-                mutation.reduce(state: &oldState)
-            }
-
-            return true
-        }
-    }
-
-    func reduce(context: Any, coordinator: Any) -> Bool {
-        _reduce(context, coordinator)
     }
 }
 
