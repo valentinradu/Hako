@@ -41,135 +41,15 @@ public struct SideEffect<E> {
     }
 }
 
-private struct AnyMutation {
-    private let _reduce: (Any, Any) -> Bool
-
-    public init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
-        _reduce = { context, coordinator in
-            guard let context = context as? AnyContext<M.S>,
-                  let environment = context.environment as? E,
-                  let coordinator = coordinator as? StoreCoordinator
-            else {
-                return false
-            }
-
-            let sideEffect = context.perform { oldState in
-                mutation.reduce(state: &oldState)
-            }
-
-            Task.detached { [environment] in
-                guard let nextMutation = await sideEffect.perform(environment: environment) else {
-                    return
-                }
-
-                _ = coordinator.reduce(nextMutation)
-            }
-
-            return true
-        }
-    }
-
-    public init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
-        _reduce = { context, _ in
-            guard let context = context as? AnyContext<M.S> else {
-                return false
-            }
-
-            context.perform { oldState in
-                mutation.reduce(state: &oldState)
-            }
-
-            return true
-        }
-    }
-
-    func reduce(context: Any, coordinator: Any) -> Bool {
-        _reduce(context, coordinator)
-    }
-}
-
-private protocol Reducer {
-    func reduce(_ mutation: AnyMutation) -> Bool
-}
-
-public struct Store<S>: Reducer where S: Equatable {
-    private let _context: AnyContext<S>
-    private let _coordinator: StoreCoordinator
-
-    init(context: AnyContext<S>, coordinator: StoreCoordinator) {
-        _context = context
-        _coordinator = coordinator
-    }
-
-    public var state: S {
-        _context.state
-    }
-
-    fileprivate func reduce(_ mutation: AnyMutation) -> Bool {
-        mutation.reduce(context: _context,
-                        coordinator: _coordinator)
-    }
-}
-
-public struct AnyReducer {
-    private let _reducerBuilder: (StoreCoordinator) -> Reducer
-
-    init<S, E>(_ context: StoreContext<S, E>) {
-        _reducerBuilder = {
-            Store(context: AnyContext(context), coordinator: $0)
-        }
-    }
-
-    init<OS, OE, S, E>(_ context: PartialContext<OS, OE, S, E>) {
-        _reducerBuilder = {
-            Store(context: AnyContext(context), coordinator: $0)
-        }
-    }
-
-    fileprivate func reducer(with coordinator: StoreCoordinator) -> Reducer {
-        _reducerBuilder(coordinator)
-    }
-}
-
-public struct AnyContext<S> where S: Equatable {
-    private let _perform: ((inout S) -> Any) -> Any
-    private let _environment: Any
-    private let _state: S
-
-    init<E>(_ context: StoreContext<S, E>) {
-        _perform = { context.perform(on: \.self, update: $0) }
-        _environment = context.environment
-        _state = context.state
-    }
-
-    init<OS, OE, E>(_ context: PartialContext<OS, OE, S, E>) {
-        _perform = { context.perform(update: $0) }
-        _environment = context.environment
-        _state = context.state
-    }
-
-    var environment: Any {
-        _environment
-    }
-
-    var state: S {
-        _state
-    }
-
-    func perform<R>(update: (inout S) -> R) -> R {
-        _perform(update) as! R
-    }
-}
-
 public struct StoreCoordinator: Reducer {
-    private var _contexts: [AnyReducer]
+    private var _reducers: [ReducerFactory]
 
     public init() {
-        _contexts = []
+        _reducers = []
     }
 
-    init(contexts: [AnyReducer]) {
-        _contexts = contexts
+    fileprivate init(reducers: [ReducerFactory]) {
+        _reducers = reducers
     }
 
     public func reduce<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
@@ -183,7 +63,7 @@ public struct StoreCoordinator: Reducer {
     }
 
     fileprivate func reduce(_ mutation: AnyMutation) -> Bool {
-        for context in _contexts {
+        for context in _reducers {
             if context.reducer(with: self).reduce(mutation) {
                 return true
             }
@@ -192,11 +72,11 @@ public struct StoreCoordinator: Reducer {
     }
 
     public func add<OS, OE>(context: StoreContext<OS, OE>) -> StoreCoordinator {
-        StoreCoordinator(contexts: _contexts + [AnyReducer(context)])
+        StoreCoordinator(reducers: _reducers + [ReducerFactory(context)])
     }
 
     public func add<OS, OE, S, E>(context: PartialContext<OS, OE, S, E>) -> StoreCoordinator {
-        StoreCoordinator(contexts: _contexts + [AnyReducer(context)])
+        StoreCoordinator(reducers: _reducers + [ReducerFactory(context)])
     }
 }
 
@@ -288,5 +168,121 @@ public class StoreContext<S, E>: ObservableObject where S: Equatable {
                 return result
             }
         }
+    }
+}
+
+private struct AnyContext<S> where S: Equatable {
+    private let _perform: ((inout S) -> Any) -> Any
+    private let _environment: Any
+    private let _state: S
+
+    init<E>(_ context: StoreContext<S, E>) {
+        _perform = { context.perform(on: \.self, update: $0) }
+        _environment = context.environment
+        _state = context.state
+    }
+
+    init<OS, OE, E>(_ context: PartialContext<OS, OE, S, E>) {
+        _perform = { context.perform(update: $0) }
+        _environment = context.environment
+        _state = context.state
+    }
+
+    var environment: Any {
+        _environment
+    }
+
+    var state: S {
+        _state
+    }
+
+    func perform<R>(update: (inout S) -> R) -> R {
+        _perform(update) as! R
+    }
+}
+
+private struct AnyMutation {
+    private let _reduce: (Any, Any) -> Bool
+
+    init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
+        _reduce = { context, coordinator in
+            guard let context = context as? AnyContext<M.S>,
+                  let environment = context.environment as? E,
+                  let coordinator = coordinator as? StoreCoordinator
+            else {
+                return false
+            }
+
+            let sideEffect = context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            Task.detached { [environment] in
+                guard let nextMutation = await sideEffect.perform(environment: environment) else {
+                    return
+                }
+
+                _ = coordinator.reduce(nextMutation)
+            }
+
+            return true
+        }
+    }
+
+    init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
+        _reduce = { context, _ in
+            guard let context = context as? AnyContext<M.S> else {
+                return false
+            }
+
+            context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            return true
+        }
+    }
+
+    func reduce(context: Any, coordinator: Any) -> Bool {
+        _reduce(context, coordinator)
+    }
+}
+
+private protocol Reducer {
+    func reduce(_ mutation: AnyMutation) -> Bool
+}
+
+private struct Store<S>: Reducer where S: Equatable {
+    private let _context: AnyContext<S>
+    private let _coordinator: StoreCoordinator
+
+    init(context: AnyContext<S>, coordinator: StoreCoordinator) {
+        _context = context
+        _coordinator = coordinator
+    }
+
+    func reduce(_ mutation: AnyMutation) -> Bool {
+        mutation.reduce(context: _context,
+                        coordinator: _coordinator)
+    }
+}
+
+private struct ReducerFactory {
+    private let _make: (StoreCoordinator) -> Reducer
+
+    init<S, E>(_ context: StoreContext<S, E>) {
+        _make = {
+            Store(context: AnyContext(context), coordinator: $0)
+        }
+    }
+
+    init<OS, OE, S, E>(_ context: PartialContext<OS, OE, S, E>) {
+        _make = {
+            Store(context: AnyContext(context), coordinator: $0)
+        }
+    }
+
+    fileprivate func reducer(with coordinator: StoreCoordinator) -> Reducer {
+        _make(coordinator)
     }
 }
