@@ -13,38 +13,34 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-typealias IdentitySideEffect = SideEffect<AppState, AppEnvironment, IdentityEnvironment>
-typealias AppSideEffect = SideEffect<AppState, AppEnvironment, AppEnvironment>
+typealias IdentitySideEffect = SideEffect<IdentityEnvironment>
 
-struct LoginAction: Action {
-    func reduce(state _: inout IdentityState) -> IdentitySideEffect? {
-        return { _, store in
-            let store = store.partial(state: \.identity,
-                                      environment: \.identity)
-            store.dispatch(action: SetUserAction(user: .main))
+struct LoginAction: Mutation {
+    func reduce(state _: inout IdentityState) -> IdentitySideEffect {
+        SideEffect { _ in
+            SetUserAction(user: .main)
         }
     }
 }
 
-struct LogoutAction: Action {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+struct LogoutAction: Mutation {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect {
         state = .guest
-        return { env, _ in
+        return SideEffect { env in
             await env.logout()
         }
     }
 }
 
-struct SetUserAction: Action {
+struct SetUserAction: Mutation {
     let user: User
-    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+    func reduce(state: inout IdentityState) {
         state = .member(user)
-        return .none
     }
 }
 
-struct LikeAction: Action {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect? {
+struct LikeAction: Mutation {
+    func reduce(state: inout IdentityState) {
         switch state {
         case .guest:
             break
@@ -52,15 +48,14 @@ struct LikeAction: Action {
             user.likes += 1
             state = .member(user)
         }
-        return .none
     }
 }
 
-struct ShowAlert: Action {
-    let error: Error
-    func reduce(state: inout AppState) -> AppSideEffect? {
+struct ShowAlert: Mutation {
+    let error: IdentityError
+
+    func reduce(state: inout AppState) {
         state.errors.append(error)
-        return .none
     }
 }
 
@@ -87,25 +82,52 @@ struct User: Hashable {
     var likes: Int
 }
 
-class IdentityEnvironment {
+actor IdentityEnvironment {
     @Published var logoutCalled: Bool = false
     func logout() async {
         logoutCalled = true
     }
 }
 
-struct AppState {
+struct AppState: Equatable {
     var identity: IdentityState
-    var errors: [Error]
+    var errors: [IdentityError]
+}
+
+extension AppState {
+    init() {
+        self.init(identity: .guest, errors: [])
+    }
 }
 
 struct AppEnvironment {
     let identity: IdentityEnvironment
 }
 
+extension AppEnvironment {
+    init() {
+        self.init(identity: .init())
+    }
+}
+
 extension Publisher {
     func timeout(_ value: TimeInterval) -> Publishers.Timeout<Self, RunLoop> {
         timeout(RunLoop.SchedulerTimeType.Stride(value),
                 scheduler: RunLoop.main)
+    }
+}
+
+extension StoreContext {
+    convenience init(state: AppState = .init()) where S == AppState, E == AppEnvironment {
+        self.init(state: state,
+                  environment: .init())
+    }
+}
+
+extension StoreCoordinator {
+    init(context: StoreContext<AppState, AppEnvironment>) {
+        self = StoreCoordinator()
+            .add(context: context)
+            .add(context: context.partial(state: \.identity, environment: \.identity))
     }
 }

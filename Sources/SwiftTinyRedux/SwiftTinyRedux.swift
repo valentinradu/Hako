@@ -8,175 +8,235 @@
 import Combine
 import Foundation
 
-public typealias SideEffect<OS, OE, E> = (E, Store<OS, OE>) async throws -> Void
-public typealias ErrorSideEffect<OS, OE> = (Error, Store<OS, OE>) async -> Void
-public protocol Action {
-    associatedtype S
-    associatedtype E
-    associatedtype OS
-    associatedtype OE
-    func reduce(state: inout S) -> SideEffect<OS, OE, E>?
+public protocol Mutation {
+    associatedtype S: Equatable
+    associatedtype SE
+    func reduce(state: inout S) -> SE
 }
 
-public protocol Dispatcher {
-    associatedtype S
-    associatedtype E
-    associatedtype OS
-    associatedtype OE
-    func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE
-}
+public struct SideEffect<E> {
+    private let _perform: (E) async -> AnyMutation?
 
-public struct AnyAction<OS, OE, S, E>: Action {
-    private var _reduce: (inout S) -> SideEffect<OS, OE, E>?
-    public init<A>(_ action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
-        _reduce = action.reduce
+    public init(_ perform: @escaping (E) async -> Void) {
+        _perform = {
+            await perform($0)
+            return nil
+        }
     }
 
-    public func reduce(state: inout S) -> SideEffect<OS, OE, E>? {
-        _reduce(&state)
-    }
-}
-
-public struct AnyErrorSideEffect<OS, OE> {
-    private var _sideEfect: ErrorSideEffect<OS, OE>
-    public init(_ sideEffect: @escaping ErrorSideEffect<OS, OE>) {
-        _sideEfect = sideEffect
+    public init<M>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == SideEffect<E> {
+        _perform = {
+            await AnyMutation(perform($0))
+        }
     }
 
-    public func perform(error: Error, store: Store<OS, OE>) async {
-        await _sideEfect(error, store)
+    public init<M>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == Void {
+        _perform = {
+            await AnyMutation(perform($0))
+        }
+    }
+
+    fileprivate func perform(environment: E) async -> AnyMutation? {
+        await _perform(environment)
     }
 }
 
-public typealias Dispatch<OS, OE, S, E> = (AnyAction<OS, OE, S, E>) -> Void
+private struct AnyMutation {
+    private let _reduce: (Any, Any) -> Bool
 
-public struct Store<S, E>: Dispatcher {
-    public typealias OS = S
-    public typealias OE = E
-    private let _underlyingStore: PartialStore<S, E, S, E>
-    private let _errorSideEffects: [AnyErrorSideEffect<S, E>]
+    public init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
+        _reduce = { context, coordinator in
+            guard let context = context as? AnyContext<M.S>,
+                  let environment = context.environment as? E,
+                  let coordinator = coordinator as? StoreCoordinator
+            else {
+                return false
+            }
 
-    public init(context: StoreContext<S, E>,
-                errorSideEffects: [AnyErrorSideEffect<S, E>] = [],
-                dispatch: Dispatch<OS, OE, S, E>? = nil)
-    {
-        _underlyingStore = PartialStore(context: context,
-                                        errorSideEffects: errorSideEffects,
-                                        dispatch: dispatch,
-                                        state: \.self,
-                                        environment: \.self)
-        _errorSideEffects = errorSideEffects
+            let sideEffect = context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            Task.detached { [environment] in
+                guard let nextMutation = await sideEffect.perform(environment: environment) else {
+                    return
+                }
+
+                _ = coordinator.reduce(nextMutation)
+            }
+
+            return true
+        }
     }
 
-    public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
-        _underlyingStore.dispatch(action: action)
+    public init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
+        _reduce = { context, _ in
+            guard let context = context as? AnyContext<M.S> else {
+                return false
+            }
+
+            context.perform { oldState in
+                mutation.reduce(state: &oldState)
+            }
+
+            return true
+        }
     }
 
-    public func partial<NS, NE>(state stateKeyPath: WritableKeyPath<S, NS>,
-                                environment environmentKeyPath: KeyPath<E, NE>) -> PartialStore<OS, OE, NS, NE>
-    {
-        _underlyingStore.partial(state: stateKeyPath,
-                                 environment: environmentKeyPath)
+    func reduce(context: Any, coordinator: Any) -> Bool {
+        _reduce(context, coordinator)
+    }
+}
+
+private protocol Reducer {
+    func reduce(_ mutation: AnyMutation) -> Bool
+}
+
+public struct Store<S>: Reducer where S: Equatable {
+    private let _context: AnyContext<S>
+    private let _coordinator: StoreCoordinator
+
+    init(context: AnyContext<S>, coordinator: StoreCoordinator) {
+        _context = context
+        _coordinator = coordinator
     }
 
     public var state: S {
-        _underlyingStore.state
+        _context.state
     }
 
-    var environment: E {
-        _underlyingStore.environment
-    }
-}
-
-public extension Store {
-    init(state: S, environment: E) {
-        let context = StoreContext(state: state,
-                                   environment: environment)
-        self.init(context: context)
+    fileprivate func reduce(_ mutation: AnyMutation) -> Bool {
+        mutation.reduce(context: _context,
+                        coordinator: _coordinator)
     }
 }
 
-public struct PartialStore<OS, OE, S, E>: Dispatcher {
-    private let _context: StoreContext<OS, OE>
+public struct AnyReducer {
+    private let _reducerBuilder: (StoreCoordinator) -> Reducer
+
+    init<S, E>(_ context: StoreContext<S, E>) {
+        _reducerBuilder = {
+            Store(context: AnyContext(context), coordinator: $0)
+        }
+    }
+
+    init<OS, OE, S, E>(_ context: PartialContext<OS, OE, S, E>) {
+        _reducerBuilder = {
+            Store(context: AnyContext(context), coordinator: $0)
+        }
+    }
+
+    fileprivate func reducer(with coordinator: StoreCoordinator) -> Reducer {
+        _reducerBuilder(coordinator)
+    }
+}
+
+public struct AnyContext<S> where S: Equatable {
+    private let _perform: ((inout S) -> Any) -> Any
+    private let _environment: Any
+    private let _state: S
+
+    init<E>(_ context: StoreContext<S, E>) {
+        _perform = { context.perform(on: \.self, update: $0) }
+        _environment = context.environment
+        _state = context.state
+    }
+
+    init<OS, OE, E>(_ context: PartialContext<OS, OE, S, E>) {
+        _perform = { context.perform(update: $0) }
+        _environment = context.environment
+        _state = context.state
+    }
+
+    var environment: Any {
+        _environment
+    }
+
+    var state: S {
+        _state
+    }
+
+    func perform<R>(update: (inout S) -> R) -> R {
+        _perform(update) as! R
+    }
+}
+
+public struct StoreCoordinator: Reducer {
+    private var _contexts: [AnyReducer]
+
+    public init() {
+        _contexts = []
+    }
+
+    init(contexts: [AnyReducer]) {
+        _contexts = contexts
+    }
+
+    public func reduce<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
+        let wasPerformed = reduce(AnyMutation(mutation))
+        assert(wasPerformed)
+    }
+
+    public func reduce<M>(_ mutation: M) where M: Mutation, M.SE == Void {
+        let wasPerformed = reduce(AnyMutation(mutation))
+        assert(wasPerformed)
+    }
+
+    fileprivate func reduce(_ mutation: AnyMutation) -> Bool {
+        for context in _contexts {
+            if context.reducer(with: self).reduce(mutation) {
+                return true
+            }
+        }
+        return false
+    }
+
+    public func add<OS, OE>(context: StoreContext<OS, OE>) -> StoreCoordinator {
+        StoreCoordinator(contexts: _contexts + [AnyReducer(context)])
+    }
+
+    public func add<OS, OE, S, E>(context: PartialContext<OS, OE, S, E>) -> StoreCoordinator {
+        StoreCoordinator(contexts: _contexts + [AnyReducer(context)])
+    }
+}
+
+public struct PartialContext<OS, OE, S, E> where S: Equatable, OS: Equatable {
     private let _stateKeyPath: WritableKeyPath<OS, S>
     private let _environmentKeyPath: KeyPath<OE, E>
-    private let _errorSideEffects: [AnyErrorSideEffect<OS, OE>]
-    private let _dispatch: Dispatch<OS, OE, S, E>?
+    private var _context: StoreContext<OS, OE>
 
-    init(context: StoreContext<OS, OE>,
-         errorSideEffects: [AnyErrorSideEffect<OS, OE>],
-         dispatch: Dispatch<OS, OE, S, E>?,
-         state stateKeyPath: WritableKeyPath<OS, S>,
-         environment environmentKeyPath: KeyPath<OE, E>)
+    public init(context: StoreContext<OS, OE>,
+                stateKeyPath: WritableKeyPath<OS, S>,
+                environmentKeyPath: KeyPath<OE, E>)
     {
-        _context = context
         _stateKeyPath = stateKeyPath
         _environmentKeyPath = environmentKeyPath
-        _errorSideEffects = errorSideEffects
-        _dispatch = dispatch
+        _context = context
     }
 
-    public func dispatch<A>(action: A) where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
-        if let dispatch = _dispatch {
-            dispatch(AnyAction(action))
-        }
-        else {
-            guard let sideEffect = _dispatch(action: action) else {
-                return
-            }
-
-            Task.detached {
-                await self._perform(sideEffect: sideEffect)
-            }
-        }
+    public init(context: StoreContext<OS, OE>) where OS == S, OE == E {
+        _stateKeyPath = \.self
+        _environmentKeyPath = \.self
+        _context = context
     }
 
-    public var state: S {
-        _context.state[keyPath: _stateKeyPath]
+    public private(set) var state: S {
+        get { _context.state[keyPath: _stateKeyPath] }
+        set { _context.state[keyPath: _stateKeyPath] = newValue }
     }
 
     var environment: E {
         _context.environment[keyPath: _environmentKeyPath]
     }
 
-    func partial<NS, NE>(state stateKeyPath: WritableKeyPath<OS, NS>,
-                         environment environmentKeyPath: KeyPath<OE, NE>) -> PartialStore<OS, OE, NS, NE>
-    {
-        PartialStore<OS, OE, NS, NE>(context: _context,
-                                     errorSideEffects: _errorSideEffects,
-                                     dispatch: _dispatch,
-                                     state: stateKeyPath,
-                                     environment: environmentKeyPath)
-    }
-
-    func _perform(sideEffect: SideEffect<OS, OE, E>) async {
-        let environment = _context.environment[keyPath: _environmentKeyPath]
-        let store = Store<OS, OE>(context: _context, errorSideEffects: _errorSideEffects)
-        do {
-            try await sideEffect(environment, store)
-        }
-        catch {
-            for errorSideEffect in _errorSideEffects {
-                await errorSideEffect.perform(error: error, store: store)
-            }
-        }
-    }
-
-    func _dispatch<A>(action: A) -> SideEffect<OS, OE, E>? where A: Action, A.S == S, A.E == E, A.OS == OS, A.OE == OE {
-        var sideEffect: SideEffect<OS, OE, E>?
-        _context.perform { oldState in
-            var state = oldState[keyPath: _stateKeyPath]
-            sideEffect = action.reduce(state: &state)
-            oldState[keyPath: _stateKeyPath] = state
-        }
-        return sideEffect
+    fileprivate func perform<R>(update: (inout S) -> R) -> R {
+        _context.perform(on: _stateKeyPath, update: update)
     }
 }
 
-public class StoreContext<S, E>: ObservableObject {
+public class StoreContext<S, E>: ObservableObject where S: Equatable {
     private let _environment: E
     private let _queue: DispatchQueue
-
     private var _state: S
 
     public init(state: S,
@@ -188,30 +248,44 @@ public class StoreContext<S, E>: ObservableObject {
                                attributes: .concurrent)
     }
 
-    public private(set) var state: S {
+    public fileprivate(set) var state: S {
         get { _queue.sync { _state } }
-        set {
-            perform { $0 = newValue }
-        }
+        set { perform(on: \.self) { $0 = newValue } }
+    }
+
+    public func partial<NS, NE>(state: WritableKeyPath<S, NS>, environment: KeyPath<E, NE>) -> PartialContext<S, E, NS, NE> {
+        PartialContext(context: self, stateKeyPath: state,
+                       environmentKeyPath: environment)
     }
 
     var environment: E {
         _queue.sync { _environment }
     }
 
-    fileprivate func perform(update: (inout S) -> Void) {
+    fileprivate func perform<R, NS>(on keyPath: WritableKeyPath<S, NS>, update: (inout NS) -> R) -> R where NS: Equatable {
         if Thread.isMainThread {
-            objectWillChange.send()
-            _queue.sync(flags: .barrier) {
-                update(&_state)
-            }
-        }
-        else {
-            DispatchQueue.main.sync {
+            var state = _state[keyPath: keyPath]
+            let result = update(&state)
+            if _state[keyPath: keyPath] != state {
                 objectWillChange.send()
                 _queue.sync(flags: .barrier) {
-                    update(&_state)
+                    _state[keyPath: keyPath] = state
                 }
+            }
+            return result
+        }
+        else {
+            return DispatchQueue.main.sync {
+                var state = _state[keyPath: keyPath]
+                let result = update(&state)
+                if _state[keyPath: keyPath] != state {
+                    objectWillChange.send()
+                    _queue.sync(flags: .barrier) {
+                        _state[keyPath: keyPath] = state
+                    }
+                }
+
+                return result
             }
         }
     }
