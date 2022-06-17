@@ -24,7 +24,7 @@ public struct SideEffect<E> {
         }
     }
 
-    public init<M>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == SideEffect<E> {
+    public init<M, NE>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == SideEffect<NE> {
         _perform = {
             await AnyMutation(perform($0))
         }
