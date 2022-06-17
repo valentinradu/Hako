@@ -8,7 +8,7 @@
 import Combine
 import Foundation
 
-public protocol Mutation {
+public protocol Mutation: Hashable {
     associatedtype S: Equatable
     associatedtype SE
     func reduce(state: inout S) -> SE
@@ -173,7 +173,11 @@ public class StoreContext<S, E>: ObservableObject where S: Equatable {
 
 public struct AnyMutation {
     private let _reduce: (Any, Any) -> Bool
-    public let _base: Any
+    public let _base: AnyHashable
+
+    public init(_ mutation: AnyMutation) {
+        self = mutation
+    }
 
     public init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
         _base = mutation
@@ -218,6 +222,20 @@ public struct AnyMutation {
 
     func reduce(context: Any, coordinator: Any) -> Bool {
         _reduce(context, coordinator)
+    }
+}
+
+extension AnyMutation: Hashable {
+    public static func == (lhs: AnyMutation, rhs: AnyMutation) -> Bool {
+        lhs._base == rhs._base
+    }
+    
+    public static func == <M>(lhs: AnyMutation, rhs: M) -> Bool where M: Mutation {
+        lhs._base == AnyHashable(rhs)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(_base)
     }
 }
 
