@@ -20,7 +20,7 @@ struct LoginAction: Mutation {
 }
 
 struct LoginSideEffect: SideEffect {
-    func perform(environment: IdentityEnvironment) async -> some Mutation {
+    func perform(environment _: IdentityEnvironment) async -> some Mutation {
         SetUserAction(user: .main)
     }
 }
@@ -28,7 +28,10 @@ struct LoginSideEffect: SideEffect {
 struct LogoutAction: Mutation {
     func reduce(state: inout IdentityState) -> some SideEffect {
         state = .guest
-        return LogOutSideEffect()
+        return SideEffectGroup {
+            LogOutSideEffect()
+            LogOutSideEffect()
+        }
     }
 }
 
@@ -99,7 +102,7 @@ actor IdentityEnvironment {
     }
 }
 
-struct AppState: Equatable {
+struct AppState: Hashable {
     var identity: IdentityState
     var errors: [IdentityError]
 }
@@ -138,6 +141,6 @@ extension StoreCoordinator {
     init(context: StoreContext<AppState, AppEnvironment>) {
         self = StoreCoordinator()
             .add(context: context)
-            .add(context: context.partial(state: \.identity, environment: \.identity))
+            .add(context: context.partial(state: \.identity))
     }
 }
