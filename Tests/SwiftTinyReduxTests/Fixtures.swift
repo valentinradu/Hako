@@ -13,34 +13,42 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-typealias IdentitySideEffect = SideEffect<IdentityEnvironment>
-
 struct LoginAction: Mutation {
-    func reduce(state _: inout IdentityState) -> IdentitySideEffect {
-        SideEffect { _ in
-            SetUserAction(user: .main)
-        }
+    func reduce(state _: inout IdentityState) -> some SideEffect {
+        LoginSideEffect()
+    }
+}
+
+struct LoginSideEffect: SideEffect {
+    func perform(environment: IdentityEnvironment) async -> some Mutation {
+        SetUserAction(user: .main)
     }
 }
 
 struct LogoutAction: Mutation {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect {
+    func reduce(state: inout IdentityState) -> some SideEffect {
         state = .guest
-        return SideEffect { env in
-            await env.logout()
-        }
+        return LogOutSideEffect()
+    }
+}
+
+struct LogOutSideEffect: SideEffect {
+    func perform(environment: IdentityEnvironment) async -> some Mutation {
+        await environment.logout()
+        return .empty
     }
 }
 
 struct SetUserAction: Mutation {
     let user: User
-    func reduce(state: inout IdentityState) {
+    func reduce(state: inout IdentityState) -> some SideEffect {
         state = .member(user)
+        return .empty
     }
 }
 
 struct LikeAction: Mutation {
-    func reduce(state: inout IdentityState) {
+    func reduce(state: inout IdentityState) -> some SideEffect {
         switch state {
         case .guest:
             break
@@ -48,14 +56,16 @@ struct LikeAction: Mutation {
             user.likes += 1
             state = .member(user)
         }
+        return .empty
     }
 }
 
 struct ShowAlert: Mutation {
     let error: IdentityError
 
-    func reduce(state: inout AppState) {
+    func reduce(state: inout AppState) -> some SideEffect {
         state.errors.append(error)
+        return .empty
     }
 }
 

@@ -10,35 +10,15 @@ import Foundation
 
 public protocol Mutation: Hashable {
     associatedtype S: Equatable
-    associatedtype SE
+    associatedtype SE: SideEffect
     func reduce(state: inout S) -> SE
 }
 
-public struct SideEffect<E> {
-    private let _perform: (E) async -> AnyMutation?
+public protocol SideEffect: Hashable {
+    associatedtype E
+    associatedtype M: Mutation
 
-    public init(_ perform: @escaping (E) async -> Void) {
-        _perform = {
-            await perform($0)
-            return nil
-        }
-    }
-
-    public init<M, NE>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == SideEffect<NE> {
-        _perform = {
-            await AnyMutation(perform($0))
-        }
-    }
-
-    public init<M>(_ perform: @escaping (E) async -> M) where M: Mutation, M.SE == Void {
-        _perform = {
-            await AnyMutation(perform($0))
-        }
-    }
-
-    public func perform(environment: E) async -> AnyMutation? {
-        await _perform(environment)
-    }
+    func perform(environment: E) async -> M
 }
 
 public struct StoreCoordinator: Reducer {
@@ -52,12 +32,7 @@ public struct StoreCoordinator: Reducer {
         _reducers = reducers
     }
 
-    public func reduce<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
-        let wasPerformed = reduce(AnyMutation(mutation))
-        assert(wasPerformed)
-    }
-
-    public func reduce<M>(_ mutation: M) where M: Mutation, M.SE == Void {
+    public func reduce<M>(_ mutation: M) where M: Mutation {
         let wasPerformed = reduce(AnyMutation(mutation))
         assert(wasPerformed)
     }
@@ -171,7 +146,43 @@ public class StoreContext<S, E>: ObservableObject where S: Equatable {
     }
 }
 
-public struct AnyMutation {
+public struct EmptySideEffect: SideEffect {
+    public func perform(environment _: Any) async -> some Mutation {
+        assertionFailure()
+        return EmptyMutation()
+    }
+}
+
+public extension SideEffect where Self == EmptySideEffect {
+    static var empty: EmptySideEffect { EmptySideEffect() }
+}
+
+public struct EmptyMutation: Mutation {
+    public func reduce(state _: inout AnyHashable) -> some SideEffect {
+        assertionFailure()
+        return EmptySideEffect()
+    }
+}
+
+public extension Mutation where Self == EmptyMutation {
+    static var empty: EmptyMutation { EmptyMutation() }
+}
+
+extension AnyMutation: Hashable {
+    public static func == (lhs: AnyMutation, rhs: AnyMutation) -> Bool {
+        lhs._base == rhs._base
+    }
+
+    public static func == <M>(lhs: AnyMutation, rhs: M) -> Bool where M: Mutation {
+        lhs._base == AnyHashable(rhs)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(_base)
+    }
+}
+
+private struct AnyMutation {
     private let _reduce: (Any, Any) -> Bool
     public let _base: AnyHashable
 
@@ -179,13 +190,17 @@ public struct AnyMutation {
         self = mutation
     }
 
-    public init<M, E>(_ mutation: M) where M: Mutation, M.SE == SideEffect<E> {
+    public init<M>(_ mutation: M) where M: Mutation {
         _base = mutation
         _reduce = { context, coordinator in
             guard let context = context as? AnyContext<M.S>,
-                  let environment = context.environment as? E,
+                  let environment = context.environment as? M.SE.E,
                   let coordinator = coordinator as? StoreCoordinator
             else {
+                return false
+            }
+
+            if type(of: mutation) == EmptyMutation.self {
                 return false
             }
 
@@ -193,27 +208,13 @@ public struct AnyMutation {
                 mutation.reduce(state: &oldState)
             }
 
+            if type(of: sideEffect) == EmptySideEffect.self {
+                return true
+            }
+
             Task.detached { [environment] in
-                guard let nextMutation = await sideEffect.perform(environment: environment) else {
-                    return
-                }
-
-                _ = coordinator.reduce(nextMutation)
-            }
-
-            return true
-        }
-    }
-
-    public init<M>(_ mutation: M) where M: Mutation, M.SE == Void {
-        _base = mutation
-        _reduce = { context, _ in
-            guard let context = context as? AnyContext<M.S> else {
-                return false
-            }
-
-            context.perform { oldState in
-                mutation.reduce(state: &oldState)
+                let nextMutation = await sideEffect.perform(environment: environment)
+                _ = coordinator.reduce(AnyMutation(nextMutation))
             }
 
             return true
@@ -222,20 +223,6 @@ public struct AnyMutation {
 
     func reduce(context: Any, coordinator: Any) -> Bool {
         _reduce(context, coordinator)
-    }
-}
-
-extension AnyMutation: Hashable {
-    public static func == (lhs: AnyMutation, rhs: AnyMutation) -> Bool {
-        lhs._base == rhs._base
-    }
-    
-    public static func == <M>(lhs: AnyMutation, rhs: M) -> Bool where M: Mutation {
-        lhs._base == AnyHashable(rhs)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_base)
     }
 }
 
