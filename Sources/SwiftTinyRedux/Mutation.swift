@@ -13,15 +13,15 @@ public protocol Mutation: Hashable {
     @SideEffectBuilder func reduce(state: inout S) -> SE
 }
 
-public struct EmptyMutation: Mutation {
+public struct NoopMutation: Mutation {
     public func reduce(state _: inout AnyHashable) -> some SideEffect {
         assertionFailure()
-        return EmptySideEffect()
+        return NoopSideEffect()
     }
 }
 
-public extension Mutation where Self == EmptyMutation {
-    static var empty: EmptyMutation { EmptyMutation() }
+public extension Mutation where Self == NoopMutation {
+    static var noop: NoopMutation { NoopMutation() }
 }
 
 struct AnyMutation: Mutation {
@@ -42,11 +42,11 @@ struct AnyMutation: Mutation {
         _base = mutation
         _reduce = { state in
             guard var oldState = state.base as? M.S else {
-                return AnySideEffect(.empty)
+                return AnySideEffect(.noop)
             }
 
-            if type(of: mutation) == EmptyMutation.self {
-                return AnySideEffect(.empty)
+            if type(of: mutation) == NoopMutation.self {
+                return AnySideEffect(.noop)
             }
 
             let sideEffect = mutation.reduce(state: &oldState)

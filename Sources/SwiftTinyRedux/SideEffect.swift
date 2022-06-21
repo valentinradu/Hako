@@ -15,15 +15,15 @@ public protocol SideEffect: Hashable {
     func perform(environment: E) async throws -> M
 }
 
-public struct EmptySideEffect: SideEffect {
+public struct NoopSideEffect: SideEffect {
     public func perform(environment _: Any) async -> some Mutation {
         assertionFailure()
-        return EmptyMutation()
+        return NoopMutation()
     }
 }
 
-public extension SideEffect where Self == EmptySideEffect {
-    static var empty: EmptySideEffect { EmptySideEffect() }
+public extension SideEffect where Self == NoopSideEffect {
+    static var noop: NoopSideEffect { NoopSideEffect() }
 }
 
 struct AnySideEffect: SideEffect {
@@ -44,11 +44,11 @@ struct AnySideEffect: SideEffect {
         _base = sideEffect
         _perform = { environment in
             guard let environment = environment as? SE.E else {
-                return AnyMutation(.empty)
+                return AnyMutation(.noop)
             }
 
-            if type(of: sideEffect) == EmptySideEffect.self {
-                return AnyMutation(.empty)
+            if type(of: sideEffect) == NoopSideEffect.self {
+                return AnyMutation(.noop)
             }
 
             let nextMutation = try await sideEffect.perform(environment: environment)
