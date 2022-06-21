@@ -13,7 +13,7 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-struct LoginAction: Mutation {
+struct LoginMutation: Mutation {
     func reduce(state _: inout IdentityState) -> some SideEffect {
         LoginSideEffect()
     }
@@ -21,11 +21,11 @@ struct LoginAction: Mutation {
 
 struct LoginSideEffect: SideEffect {
     func perform(environment _: IdentityEnvironment) async -> some Mutation {
-        SetUserAction(user: .main)
+        SetUserMutation(user: .main)
     }
 }
 
-struct LogoutAction: Mutation {
+struct LogoutMutation: Mutation {
     func reduce(state: inout IdentityState) -> some SideEffect {
         state = .guest
         return SideEffectGroup {
@@ -42,7 +42,7 @@ struct LogOutSideEffect: SideEffect {
     }
 }
 
-struct SetUserAction: Mutation {
+struct SetUserMutation: Mutation {
     let user: User
     func reduce(state: inout IdentityState) -> some SideEffect {
         state = .member(user)

@@ -13,7 +13,7 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testSimpleDispatch() {
         let context = StoreContext()
         let coordinator = StoreCoordinator(context: context)
-        coordinator.reduce(SetUserAction(user: .main))
+        coordinator.dispatch(SetUserMutation(user: .main))
         XCTAssertEqual(context.state.identity, .member(User.main))
     }
 
@@ -28,7 +28,7 @@ final class SwiftTinyReduxTests: XCTestCase {
             }
             .store(in: &cancellables)
 
-        coordinator.reduce(SetUserAction(user: .main))
+        coordinator.dispatch(SetUserMutation(user: .main))
 
         XCTAssertTrue(wasCalledOnMainThread)
         XCTAssertEqual(context.state.identity, .member(User.main))
@@ -52,7 +52,7 @@ final class SwiftTinyReduxTests: XCTestCase {
 
         for _ in 0 ..< 100 {
             queue.async {
-                coordinator.reduce(LikeAction())
+                coordinator.dispatch(LikeAction())
             }
         }
 

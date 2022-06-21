@@ -7,53 +7,84 @@
 
 import Foundation
 
-public struct StoreCoordinator: Reducer {
+public protocol ErrorReducer {
+    associatedtype SE: SideEffect
+    func reduce(error: Error) -> SE
+}
+
+public struct AnyErrorReducer: ErrorReducer {
+    private let _reduce: (Error) -> AnySideEffect
+
+    public init<ER>(_ reducer: ER) where ER: ErrorReducer {
+        _reduce = {
+            AnySideEffect(reducer.reduce(error: $0))
+        }
+    }
+
+    public func reduce(error: Error) -> some SideEffect {
+        _reduce(error)
+    }
+}
+
+public struct StoreCoordinator: Dispatcher {
     private var _reducers: [ReducerFactory]
-    private var _errorHandlers: [(Error) -> AnyMutation]
+    private var _errorReducers: [AnyErrorReducer]
 
     public init() {
         _reducers = []
-        _errorHandlers = []
+        _errorReducers = []
     }
 
     fileprivate init(reducers: [ReducerFactory],
-                     errorHandlers: [(Error) -> AnyMutation])
+                     errorReducers: [AnyErrorReducer])
     {
         _reducers = reducers
-        _errorHandlers = errorHandlers
-    }
-
-    public func reduce<M>(_ mutation: M) where M: Mutation {
-        reduce(AnyMutation(mutation))
+        _errorReducers = errorReducers
     }
 
     public func add<OS, OE>(context: StoreContext<OS, OE>) -> StoreCoordinator where OS: Hashable {
         let newReducers = _reducers + [ReducerFactory(context)]
         return StoreCoordinator(reducers: newReducers,
-                                errorHandlers: _errorHandlers)
+                                errorReducers: _errorReducers)
     }
 
     public func add<OS, OE, S>(context: PartialContext<OS, OE, S>) -> StoreCoordinator where S: Hashable {
         let newReducers = _reducers + [ReducerFactory(context)]
         return StoreCoordinator(reducers: newReducers,
-                                errorHandlers: _errorHandlers)
+                                errorReducers: _errorReducers)
     }
 
-    public func add<M>(errorHandler: @escaping (Error) -> M) -> StoreCoordinator where M: Mutation {
-        let newFactories = _errorHandlers + [{ AnyMutation(errorHandler($0)) }]
+    public func add<ER>(errorReducer: ER) -> StoreCoordinator where ER: ErrorReducer {
+        let newFactories = _errorReducers + [AnyErrorReducer(errorReducer)]
         return StoreCoordinator(reducers: _reducers,
-                                errorHandlers: newFactories)
+                                errorReducers: newFactories)
     }
 
     public func catchToSideEffect(error: Error) {
-        for errorHandler in _errorHandlers {
-            reduce(AnyMutation(errorHandler(error)))
+        for errorReducer in _errorReducers {
+            let sideEffect = errorReducer.reduce(error: error)
+            let action = ForwardAction(sideEffect: sideEffect)
+            dispatch(AnyAction(action))
+        }
+    }
+    
+    public func dispatch<A>(_ action: A) where A: Action {
+        dispatch(AnyAction(action))
+    }
+    
+    public func dispatch<M>(_ mutation: M) where M: Mutation {
+        dispatch(AnyMutation(mutation))
+    }
+
+    func dispatch(_ item: AnyMutation) {
+        for context in _reducers {
+            context.reducer(with: self).dispatch(item)
         }
     }
 
-    func reduce(_ mutation: AnyMutation) {
+    func dispatch(_ item: AnyAction) {
         for context in _reducers {
-            context.reducer(with: self).reduce(mutation)
+            context.reducer(with: self).dispatch(item)
         }
     }
 }
@@ -144,6 +175,13 @@ public struct PartialContext<OS, OE, S> where S: Equatable, OS: Equatable {
     }
 }
 
+private struct ForwardAction<SE>: Action where SE: SideEffect {
+    let sideEffect: SE
+    func perform() -> some SideEffect {
+        sideEffect
+    }
+}
+
 struct AnyContext<S> where S: Equatable {
     private let _perform: ((inout S) -> Any) -> Any
     private let _environment: Any
@@ -174,11 +212,12 @@ struct AnyContext<S> where S: Equatable {
     }
 }
 
-private protocol Reducer {
-    func reduce(_ mutation: AnyMutation) -> Void
+private protocol Dispatcher {
+    func dispatch(_ item: AnyMutation) -> Void
+    func dispatch(_ item: AnyAction) -> Void
 }
 
-private struct Store<S>: Reducer where S: Hashable {
+private struct Store<S>: Dispatcher where S: Hashable {
     private let _context: AnyContext<S>
     private let _coordinator: StoreCoordinator
 
@@ -206,11 +245,11 @@ private struct Store<S>: Reducer where S: Hashable {
         }
         else {
             let nextMutation = try await sideEffect.perform(environment: _context.environment)
-            _coordinator.reduce(AnyMutation(nextMutation))
+            _coordinator.dispatch(AnyMutation(nextMutation))
         }
     }
 
-    func reduce(_ mutation: AnyMutation) {
+    func dispatch(_ mutation: AnyMutation) {
         if type(of: mutation.base) == EmptyMutation.self {
             return
         }
@@ -235,10 +274,27 @@ private struct Store<S>: Reducer where S: Hashable {
             }
         }
     }
+
+    func dispatch(_ action: AnyAction) {
+        let sideEffect = AnySideEffect(action.perform())
+
+        if type(of: sideEffect.base) == EmptySideEffect.self {
+            return
+        }
+
+        Task.detached {
+            do {
+                try await perform(sideEffect)
+            }
+            catch {
+                _coordinator.catchToSideEffect(error: error)
+            }
+        }
+    }
 }
 
 private struct ReducerFactory {
-    private let _make: (StoreCoordinator) -> Reducer
+    private let _make: (StoreCoordinator) -> Dispatcher
 
     init<S, E>(_ context: StoreContext<S, E>) where S: Hashable {
         _make = {
@@ -252,7 +308,7 @@ private struct ReducerFactory {
         }
     }
 
-    fileprivate func reducer(with coordinator: StoreCoordinator) -> Reducer {
+    fileprivate func reducer(with coordinator: StoreCoordinator) -> Dispatcher {
         _make(coordinator)
     }
 }

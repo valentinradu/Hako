@@ -33,6 +33,12 @@ struct AnyMutation: Mutation {
     }
 
     init<M>(_ mutation: M) where M: Mutation {
+        if let anyMutation = mutation as? AnyMutation {
+            _base = anyMutation._base
+            _reduce = anyMutation._reduce
+            return
+        }
+
         _base = mutation
         _reduce = { state in
             guard var oldState = state.base as? M.S else {
