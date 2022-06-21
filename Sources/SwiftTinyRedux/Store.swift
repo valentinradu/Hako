@@ -27,36 +27,36 @@ public struct AnyErrorReducer: ErrorReducer {
 }
 
 public struct StoreCoordinator: Dispatcher {
-    private var _dispatchers: [DispatcherFactory]
+    private var _reducers: [ReducerFactory]
     private var _errorReducers: [AnyErrorReducer]
 
     public init() {
-        _dispatchers = []
+        _reducers = []
         _errorReducers = []
     }
 
-    fileprivate init(dispatchers: [DispatcherFactory],
+    fileprivate init(reducers: [ReducerFactory],
                      errorReducers: [AnyErrorReducer])
     {
-        _dispatchers = dispatchers
+        _reducers = reducers
         _errorReducers = errorReducers
     }
 
     public func add<OS, OE>(context: StoreContext<OS, OE>) -> StoreCoordinator where OS: Hashable {
-        let newReducers = _dispatchers + [DispatcherFactory(context)]
-        return StoreCoordinator(dispatchers: newReducers,
+        let newReducers = _reducers + [ReducerFactory(context)]
+        return StoreCoordinator(reducers: newReducers,
                                 errorReducers: _errorReducers)
     }
 
     public func add<OS, OE, S>(context: PartialContext<OS, OE, S>) -> StoreCoordinator where S: Hashable {
-        let newReducers = _dispatchers + [DispatcherFactory(context)]
-        return StoreCoordinator(dispatchers: newReducers,
+        let newReducers = _reducers + [ReducerFactory(context)]
+        return StoreCoordinator(reducers: newReducers,
                                 errorReducers: _errorReducers)
     }
 
     public func add<ER>(errorReducer: ER) -> StoreCoordinator where ER: ErrorReducer {
         let newFactories = _errorReducers + [AnyErrorReducer(errorReducer)]
-        return StoreCoordinator(dispatchers: _dispatchers,
+        return StoreCoordinator(reducers: _reducers,
                                 errorReducers: newFactories)
     }
 
@@ -77,14 +77,14 @@ public struct StoreCoordinator: Dispatcher {
     }
 
     func dispatch(_ item: AnyMutation) {
-        for context in _dispatchers {
-            context.dispatcher(with: self).dispatch(item)
+        for context in _reducers {
+            context.reducer(with: self).dispatch(item)
         }
     }
 
     func dispatch(_ item: AnyAction) {
-        for context in _dispatchers {
-            context.dispatcher(with: self).dispatch(item)
+        for context in _reducers {
+            context.reducer(with: self).dispatch(item)
         }
     }
 }
@@ -250,7 +250,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
     }
 
     func dispatch(_ mutation: AnyMutation) {
-        if type(of: mutation.base) == NoopMutation.self {
+        if type(of: mutation.base) == EmptyMutation.self {
             return
         }
 
@@ -261,7 +261,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
             return AnySideEffect(sideEffect)
         }
 
-        if type(of: sideEffect.base) == NoopSideEffect.self {
+        if type(of: sideEffect.base) == EmptySideEffect.self {
             return
         }
 
@@ -278,7 +278,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
     func dispatch(_ action: AnyAction) {
         let sideEffect = AnySideEffect(action.perform())
 
-        if type(of: sideEffect.base) == NoopSideEffect.self {
+        if type(of: sideEffect.base) == EmptySideEffect.self {
             return
         }
 
@@ -293,7 +293,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
     }
 }
 
-private struct DispatcherFactory {
+private struct ReducerFactory {
     private let _make: (StoreCoordinator) -> Dispatcher
 
     init<S, E>(_ context: StoreContext<S, E>) where S: Hashable {
@@ -308,7 +308,7 @@ private struct DispatcherFactory {
         }
     }
 
-    fileprivate func dispatcher(with coordinator: StoreCoordinator) -> Dispatcher {
+    fileprivate func reducer(with coordinator: StoreCoordinator) -> Dispatcher {
         _make(coordinator)
     }
 }
