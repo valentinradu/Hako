@@ -26,7 +26,13 @@ public extension SideEffect where Self == NoopSideEffect {
     static var noop: NoopSideEffect { NoopSideEffect() }
 }
 
-struct AnySideEffect: SideEffect {
+public extension SideEffect {
+    var asAnyMutation: AnySideEffect {
+        AnySideEffect(self)
+    }
+}
+
+public struct AnySideEffect: SideEffect {
     private let _perform: (Any) async throws -> AnyMutation
     private let _base: AnyHashable
 
@@ -56,17 +62,17 @@ struct AnySideEffect: SideEffect {
         }
     }
 
-    func perform(environment: Any) async throws -> some Mutation {
+    public func perform(environment: Any) async throws -> some Mutation {
         try await _perform(environment)
     }
 }
 
 extension AnySideEffect: Hashable {
-    static func == (lhs: AnySideEffect, rhs: AnySideEffect) -> Bool {
+    public static func == (lhs: AnySideEffect, rhs: AnySideEffect) -> Bool {
         lhs._base == rhs._base
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(_base)
     }
 }

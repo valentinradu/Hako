@@ -24,15 +24,17 @@ public extension Mutation where Self == NoopMutation {
     static var noop: NoopMutation { NoopMutation() }
 }
 
-struct AnyMutation: Mutation {
+public extension Mutation {
+    var asAnyMutation: AnyMutation {
+        AnyMutation(self)
+    }
+}
+
+public struct AnyMutation: Mutation {
     private let _reduce: (inout AnyHashable) -> AnySideEffect
     private let _base: AnyHashable
 
-    init(_ mutation: AnyMutation) {
-        self = mutation
-    }
-
-    init<M>(_ mutation: M) where M: Mutation {
+    public init<M>(_ mutation: M) where M: Mutation {
         if let anyMutation = mutation as? AnyMutation {
             _base = anyMutation._base
             _reduce = anyMutation._reduce
@@ -56,11 +58,11 @@ struct AnyMutation: Mutation {
         }
     }
 
-    var base: Any {
+    public var base: Any {
         _base.base
     }
 
-    func reduce(state: inout AnyHashable) -> some SideEffect {
+    public func reduce(state: inout AnyHashable) -> some SideEffect {
         _reduce(&state)
     }
 }
