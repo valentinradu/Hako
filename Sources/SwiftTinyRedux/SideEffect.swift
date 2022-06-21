@@ -27,7 +27,7 @@ public extension SideEffect where Self == NoopSideEffect {
 }
 
 public extension SideEffect {
-    var asAnyMutation: AnySideEffect {
+    var asAnySideEffect: AnySideEffect {
         AnySideEffect(self)
     }
 }
