@@ -49,7 +49,7 @@ public extension SideEffect where Self == NoopSideEffect {
 }
 
 public extension SideEffect {
-    var asAnySideEffect: AnySideEffect {
+    func asAnySideEffect() -> AnySideEffect {
         AnySideEffect(self)
     }
 }

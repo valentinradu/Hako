@@ -25,7 +25,7 @@ public extension Mutation where Self == NoopMutation {
 }
 
 public extension Mutation {
-    var asAnyMutation: AnyMutation {
+    func asAnyMutation() -> AnyMutation {
         AnyMutation(self)
     }
 }
