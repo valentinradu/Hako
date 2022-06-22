@@ -26,7 +26,7 @@ public struct InlineSideEffect<E>: SideEffect {
     private let _perform: (E) -> AnyMutation
     private let _uuid: UUID
 
-    init<M>(@SideEffectBuilder perform: @escaping (E) -> M) where M: Mutation {
+    public init<M>(@SideEffectBuilder perform: @escaping (E) -> M) where M: Mutation {
         _perform = { AnyMutation(perform($0)) }
         _uuid = UUID()
     }
