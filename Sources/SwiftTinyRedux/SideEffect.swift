@@ -15,10 +15,10 @@ public protocol SideEffect: Hashable {
     func perform(env: E) async throws -> M
 }
 
-public struct EmptySideEffect: SideEffect {
+public struct NoopSideEffect: SideEffect {
     public func perform(env _: Any) async -> some Mutation {
         assertionFailure()
-        return EmptyMutation()
+        return NoopMutation()
     }
 }
 
@@ -26,7 +26,7 @@ public struct InlineSideEffect<E>: SideEffect {
     private let _perform: (E) async throws -> AnyMutation
     private let _uuid: UUID
 
-    public init<M>(perform: @escaping (E) async throws -> M) where M: Mutation {
+    public init<M>(@SideEffectBuilder perform: @escaping (E) async throws -> M) where M: Mutation {
         _perform = { try await AnyMutation(perform($0)) }
         _uuid = UUID()
     }
@@ -44,8 +44,8 @@ public struct InlineSideEffect<E>: SideEffect {
     }
 }
 
-public extension SideEffect where Self == EmptySideEffect {
-    static var noop: EmptySideEffect { EmptySideEffect() }
+public extension SideEffect where Self == NoopSideEffect {
+    static var noop: NoopSideEffect { NoopSideEffect() }
 }
 
 public extension SideEffect {
@@ -75,7 +75,7 @@ public struct AnySideEffect: SideEffect {
                 return AnyMutation(.noop)
             }
 
-            if type(of: sideEffect) == EmptySideEffect.self {
+            if type(of: sideEffect) == NoopSideEffect.self {
                 return AnyMutation(.noop)
             }
 

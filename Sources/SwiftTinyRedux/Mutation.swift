@@ -13,37 +13,15 @@ public protocol Mutation: Hashable {
     @SideEffectBuilder func reduce(state: inout S) -> SE
 }
 
-public struct EmptyMutation: Mutation {
+public struct NoopMutation: Mutation {
     public func reduce(state _: inout AnyHashable) -> some SideEffect {
         assertionFailure()
-        return EmptySideEffect()
+        return NoopSideEffect()
     }
 }
 
-public struct InlineMutation<S>: Mutation where S: Hashable {
-    private let _perform: (inout S) -> AnySideEffect
-    private let _uuid: UUID
-
-    public init<SE>(perform: @escaping (S) -> SE) where SE: SideEffect {
-        _perform = { AnySideEffect(perform($0)) }
-        _uuid = UUID()
-    }
-
-    public func reduce(state: inout S) -> some SideEffect {
-        _perform(&state)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_uuid)
-    }
-
-    public static func == (_: InlineMutation<S>, _: InlineMutation<S>) -> Bool {
-        false
-    }
-}
-
-public extension Mutation where Self == EmptyMutation {
-    static var noop: EmptyMutation { EmptyMutation() }
+public extension Mutation where Self == NoopMutation {
+    static var noop: NoopMutation { NoopMutation() }
 }
 
 public extension Mutation {
@@ -69,7 +47,7 @@ public struct AnyMutation: Mutation {
                 return AnySideEffect(.noop)
             }
 
-            if type(of: mut) == EmptyMutation.self {
+            if type(of: mut) == NoopMutation.self {
                 return AnySideEffect(.noop)
             }
 

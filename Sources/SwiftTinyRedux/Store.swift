@@ -250,7 +250,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
     }
 
     func dispatch(_ mut: AnyMutation) {
-        if type(of: mut.base) == EmptyMutation.self {
+        if type(of: mut.base) == NoopMutation.self {
             return
         }
 
@@ -261,7 +261,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
             return AnySideEffect(sideEffect)
         }
 
-        if type(of: sideEffect.base) == EmptySideEffect.self {
+        if type(of: sideEffect.base) == NoopSideEffect.self {
             return
         }
 
@@ -278,7 +278,7 @@ private struct Store<S>: Dispatcher where S: Hashable {
     func dispatch(_ action: AnyAction) {
         let sideEffect = AnySideEffect(action.perform())
 
-        if type(of: sideEffect.base) == EmptySideEffect.self {
+        if type(of: sideEffect.base) == NoopSideEffect.self {
             return
         }
 

@@ -9,8 +9,8 @@ import Foundation
 
 @resultBuilder
 public enum SideEffectBuilder {
-    public static func buildBlock() -> EmptySideEffect {
-        EmptySideEffect()
+    public static func buildBlock() -> NoopSideEffect {
+        NoopSideEffect()
     }
 
     public static func buildBlock(_: Never) -> Never {}
