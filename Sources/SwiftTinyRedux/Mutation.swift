@@ -24,7 +24,7 @@ public struct InlineMutation<S>: Mutation where S: Hashable {
     private let _perform: (inout S) -> AnySideEffect
     private let _uuid: UUID
 
-    public init<SE>(@SideEffectBuilder perform: @escaping (S) -> SE) where SE: SideEffect {
+    public init<SE>(perform: @escaping (S) -> SE) where SE: SideEffect {
         _perform = { AnySideEffect(perform($0)) }
         _uuid = UUID()
     }
