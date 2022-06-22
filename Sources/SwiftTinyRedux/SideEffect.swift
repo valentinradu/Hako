@@ -23,16 +23,16 @@ public struct EmptySideEffect: SideEffect {
 }
 
 public struct InlineSideEffect<E>: SideEffect {
-    private let _perform: (E) -> AnyMutation
+    private let _perform: (E) async throws -> AnyMutation
     private let _uuid: UUID
 
-    public init<M>(@SideEffectBuilder perform: @escaping (E) -> M) where M: Mutation {
-        _perform = { AnyMutation(perform($0)) }
+    public init<M>(@SideEffectBuilder perform: @escaping (E) async throws -> M) where M: Mutation {
+        _perform = { try await AnyMutation(perform($0)) }
         _uuid = UUID()
     }
 
-    public func perform(env: E) async -> some Mutation {
-        _perform(env)
+    public func perform(env: E) async throws -> some Mutation {
+        try await _perform(env)
     }
 
     public func hash(into hasher: inout Hasher) {
