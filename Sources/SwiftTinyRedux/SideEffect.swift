@@ -26,7 +26,7 @@ public struct InlineSideEffect<E>: SideEffect {
     private let _perform: (E) async throws -> AnyMutation
     private let _uuid: UUID
 
-    public init<M>(@SideEffectBuilder perform: @escaping (E) async throws -> M) where M: Mutation {
+    public init<M>(perform: @escaping (E) async throws -> M) where M: Mutation {
         _perform = { try await AnyMutation(perform($0)) }
         _uuid = UUID()
     }
