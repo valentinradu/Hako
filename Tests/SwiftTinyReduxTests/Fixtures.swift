@@ -38,7 +38,7 @@ struct LogoutMutation: Mutation {
 struct LogOutSideEffect: SideEffect {
     func perform(env: IdentityEnvironment) async -> some Mutation {
         await env.logout()
-        return .empty
+        return .noop
     }
 }
 
@@ -46,7 +46,7 @@ struct SetUserMutation: Mutation {
     let user: User
     func reduce(state: inout IdentityState) -> some SideEffect {
         state = .member(user)
-        return .empty
+        return .noop
     }
 }
 
@@ -59,7 +59,7 @@ struct LikeAction: Mutation {
             user.likes += 1
             state = .member(user)
         }
-        return .empty
+        return .noop
     }
 }
 
@@ -68,7 +68,7 @@ struct ShowAlert: Mutation {
 
     func reduce(state: inout AppState) -> some SideEffect {
         state.errors.append(error)
-        return .empty
+        return .noop
     }
 }
 

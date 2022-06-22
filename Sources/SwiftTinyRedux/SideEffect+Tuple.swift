@@ -129,6 +129,6 @@ public struct _TupleSideEffect: SideEffect {
 
     public func perform(env _: Any) async throws -> some Mutation {
         assertionFailure()
-        return AnyMutation(.empty)
+        return AnyMutation(.noop)
     }
 }

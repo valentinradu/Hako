@@ -20,8 +20,30 @@ public struct EmptyMutation: Mutation {
     }
 }
 
+public struct InlineMutation<S>: Mutation where S: Hashable {
+    private let _perform: (inout S) -> AnySideEffect
+    private let _uuid: UUID
+
+    init<SE>(@SideEffectBuilder perform: @escaping (S) -> SE) where SE: SideEffect {
+        _perform = { AnySideEffect(perform($0)) }
+        _uuid = UUID()
+    }
+
+    public func reduce(state: inout S) -> some SideEffect {
+        _perform(&state)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(_uuid)
+    }
+
+    public static func == (_: InlineMutation<S>, _: InlineMutation<S>) -> Bool {
+        false
+    }
+}
+
 public extension Mutation where Self == EmptyMutation {
-    static var empty: EmptyMutation { EmptyMutation() }
+    static var noop: EmptyMutation { EmptyMutation() }
 }
 
 public extension Mutation {
@@ -44,11 +66,11 @@ public struct AnyMutation: Mutation {
         _base = mut
         _reduce = { state in
             guard var oldState = state.base as? M.S else {
-                return AnySideEffect(.empty)
+                return AnySideEffect(.noop)
             }
 
             if type(of: mut) == EmptyMutation.self {
-                return AnySideEffect(.empty)
+                return AnySideEffect(.noop)
             }
 
             let sideEffect = mut.reduce(state: &oldState)

@@ -22,8 +22,30 @@ public struct EmptySideEffect: SideEffect {
     }
 }
 
+public struct InlineSideEffect<E>: SideEffect {
+    private let _perform: (E) -> AnyMutation
+    private let _uuid: UUID
+
+    init<M>(@SideEffectBuilder perform: @escaping (E) -> M) where M: Mutation {
+        _perform = { AnyMutation(perform($0)) }
+        _uuid = UUID()
+    }
+
+    public func perform(env: E) async -> some Mutation {
+        _perform(env)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(_uuid)
+    }
+
+    public static func == (_: InlineSideEffect<E>, _: InlineSideEffect<E>) -> Bool {
+        false
+    }
+}
+
 public extension SideEffect where Self == EmptySideEffect {
-    static var empty: EmptySideEffect { EmptySideEffect() }
+    static var noop: EmptySideEffect { EmptySideEffect() }
 }
 
 public extension SideEffect {
@@ -50,11 +72,11 @@ public struct AnySideEffect: SideEffect {
         _base = sideEffect
         _perform = { env in
             guard let env = env as? SE.E else {
-                return AnyMutation(.empty)
+                return AnyMutation(.noop)
             }
 
             if type(of: sideEffect) == EmptySideEffect.self {
-                return AnyMutation(.empty)
+                return AnyMutation(.noop)
             }
 
             let nextMutation = try await sideEffect.perform(env: env)
