@@ -67,13 +67,13 @@ public struct StoreCoordinator: Dispatcher {
             dispatch(AnyAction(action))
         }
     }
-    
+
     public func dispatch<A>(_ action: A) where A: Action {
         dispatch(AnyAction(action))
     }
-    
-    public func dispatch<M>(_ mutation: M) where M: Mutation {
-        dispatch(AnyMutation(mutation))
+
+    public func dispatch<M>(_ mut: M) where M: Mutation {
+        dispatch(AnyMutation(mut))
     }
 
     func dispatch(_ item: AnyMutation) {
@@ -90,14 +90,14 @@ public struct StoreCoordinator: Dispatcher {
 }
 
 public class StoreContext<S, E>: ObservableObject where S: Equatable {
-    private let _environment: E
+    private let _env: E
     private let _queue: DispatchQueue
     private var _state: S
 
     public init(state: S,
-                environment: E)
+                env: E)
     {
-        _environment = environment
+        _env = env
         _state = state
         _queue = DispatchQueue(label: "com.swifttinyredux.queue",
                                attributes: .concurrent)
@@ -112,8 +112,8 @@ public class StoreContext<S, E>: ObservableObject where S: Equatable {
         PartialContext(context: self, stateKeyPath: state)
     }
 
-    var environment: E {
-        _queue.sync { _environment }
+    var env: E {
+        _queue.sync { _env }
     }
 
     fileprivate func perform<R, NS>(on keyPath: WritableKeyPath<S, NS>, update: (inout NS) -> R) -> R where NS: Equatable {
@@ -166,8 +166,8 @@ public struct PartialContext<OS, OE, S> where S: Equatable, OS: Equatable {
         set { _context.state[keyPath: _stateKeyPath] = newValue }
     }
 
-    var environment: OE {
-        _context.environment
+    var env: OE {
+        _context.env
     }
 
     fileprivate func perform<R>(update: (inout S) -> R) -> R {
@@ -184,23 +184,23 @@ private struct ForwardAction<SE>: Action where SE: SideEffect {
 
 struct AnyContext<S> where S: Equatable {
     private let _perform: ((inout S) -> Any) -> Any
-    private let _environment: Any
+    private let _env: Any
     private let _state: S
 
     init<E>(_ context: StoreContext<S, E>) {
         _perform = { context.perform(on: \.self, update: $0) }
-        _environment = context.environment
+        _env = context.env
         _state = context.state
     }
 
     init<OS, OE>(_ context: PartialContext<OS, OE, S>) {
         _perform = { context.perform(update: $0) }
-        _environment = context.environment
+        _env = context.env
         _state = context.state
     }
 
-    var environment: Any {
-        _environment
+    var env: Any {
+        _env
     }
 
     var state: S {
@@ -244,19 +244,19 @@ private struct Store<S>: Dispatcher where S: Hashable {
             }
         }
         else {
-            let nextMutation = try await sideEffect.perform(environment: _context.environment)
+            let nextMutation = try await sideEffect.perform(env: _context.env)
             _coordinator.dispatch(AnyMutation(nextMutation))
         }
     }
 
-    func dispatch(_ mutation: AnyMutation) {
-        if type(of: mutation.base) == EmptyMutation.self {
+    func dispatch(_ mut: AnyMutation) {
+        if type(of: mut.base) == EmptyMutation.self {
             return
         }
 
         let sideEffect = _context.perform { (state: inout S) -> AnySideEffect in
             var oldState = AnyHashable(state)
-            let sideEffect = mutation.reduce(state: &oldState)
+            let sideEffect = mut.reduce(state: &oldState)
             state = oldState.base as! S
             return AnySideEffect(sideEffect)
         }

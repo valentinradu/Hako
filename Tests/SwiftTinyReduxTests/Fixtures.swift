@@ -20,7 +20,7 @@ struct LoginMutation: Mutation {
 }
 
 struct LoginSideEffect: SideEffect {
-    func perform(environment _: IdentityEnvironment) async -> some Mutation {
+    func perform(env _: IdentityEnvironment) async -> some Mutation {
         SetUserMutation(user: .main)
     }
 }
@@ -36,8 +36,8 @@ struct LogoutMutation: Mutation {
 }
 
 struct LogOutSideEffect: SideEffect {
-    func perform(environment: IdentityEnvironment) async -> some Mutation {
-        await environment.logout()
+    func perform(env: IdentityEnvironment) async -> some Mutation {
+        await env.logout()
         return .empty
     }
 }
@@ -133,7 +133,7 @@ extension Publisher {
 extension StoreContext {
     convenience init(state: AppState = .init()) where S == AppState, E == AppEnvironment {
         self.init(state: state,
-                  environment: .init())
+                  env: .init())
     }
 }
 

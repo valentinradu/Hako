@@ -39,13 +39,13 @@ let navigationReducer: Reducer<NavigationState, NavigationAction, NavigationEnvi
 }
 
 let initialState = AppState()
-let environment = AppEnvironment()
+let env = AppEnvironment()
 let store = MainStore(initialState: initialState,
-                      environment: environment)
+                      env: env)
 store.add(reducer: bootstrapReducer)
 store.add(reducer: navigationReducer,
           state: \.navigation,
-          environment: \.navigation)
+          env: \.navigation)
           
 // Later on, map any state key path to interested parties.
 store.map(\.navigation.history.last, to: &viewmodel.$currentPath)

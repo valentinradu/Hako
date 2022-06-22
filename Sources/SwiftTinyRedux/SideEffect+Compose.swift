@@ -16,7 +16,7 @@ public struct SideEffectGroup<E>: SideEffect {
     private let _sideEffects: AnySideEffect
 
     public init<SE>(strategy: SideEffectGroupStrategy = .serial,
-             @SideEffectBuilder builder: () -> SE) where SE: SideEffect, SE.E == E
+                    @SideEffectBuilder builder: () -> SE) where SE: SideEffect, SE.E == E
     {
         let result = builder()
 
@@ -28,7 +28,7 @@ public struct SideEffectGroup<E>: SideEffect {
         }
     }
 
-    public func perform(environment: E) async throws -> some Mutation {
-        try await _sideEffects.perform(environment: environment)
+    public func perform(env: E) async throws -> some Mutation {
+        try await _sideEffects.perform(env: env)
     }
 }

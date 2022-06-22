@@ -34,24 +34,24 @@ public struct AnyMutation: Mutation {
     private let _reduce: (inout AnyHashable) -> AnySideEffect
     private let _base: AnyHashable
 
-    public init<M>(_ mutation: M) where M: Mutation {
-        if let anyMutation = mutation as? AnyMutation {
+    public init<M>(_ mut: M) where M: Mutation {
+        if let anyMutation = mut as? AnyMutation {
             _base = anyMutation._base
             _reduce = anyMutation._reduce
             return
         }
 
-        _base = mutation
+        _base = mut
         _reduce = { state in
             guard var oldState = state.base as? M.S else {
                 return AnySideEffect(.empty)
             }
 
-            if type(of: mutation) == EmptyMutation.self {
+            if type(of: mut) == EmptyMutation.self {
                 return AnySideEffect(.empty)
             }
 
-            let sideEffect = mutation.reduce(state: &oldState)
+            let sideEffect = mut.reduce(state: &oldState)
             state = AnyHashable(oldState)
 
             return AnySideEffect(sideEffect)

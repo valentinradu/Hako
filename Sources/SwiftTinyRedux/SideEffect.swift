@@ -12,11 +12,11 @@ public protocol SideEffect: Hashable {
     associatedtype E
     associatedtype M: Mutation
 
-    func perform(environment: E) async throws -> M
+    func perform(env: E) async throws -> M
 }
 
 public struct EmptySideEffect: SideEffect {
-    public func perform(environment _: Any) async -> some Mutation {
+    public func perform(env _: Any) async -> some Mutation {
         assertionFailure()
         return EmptyMutation()
     }
@@ -48,8 +48,8 @@ public struct AnySideEffect: SideEffect {
         }
 
         _base = sideEffect
-        _perform = { environment in
-            guard let environment = environment as? SE.E else {
+        _perform = { env in
+            guard let env = env as? SE.E else {
                 return AnyMutation(.empty)
             }
 
@@ -57,13 +57,13 @@ public struct AnySideEffect: SideEffect {
                 return AnyMutation(.empty)
             }
 
-            let nextMutation = try await sideEffect.perform(environment: environment)
+            let nextMutation = try await sideEffect.perform(env: env)
             return AnyMutation(nextMutation)
         }
     }
 
-    public func perform(environment: Any) async throws -> some Mutation {
-        try await _perform(environment)
+    public func perform(env: Any) async throws -> some Mutation {
+        try await _perform(env)
     }
 }
 
