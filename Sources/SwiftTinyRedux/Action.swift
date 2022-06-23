@@ -12,11 +12,11 @@ public protocol Action: Hashable {
     @SideEffectBuilder func perform() -> SE
 }
 
-struct AnyAction: Action {
+public struct AnyAction: Action {
     private let _perform: () -> AnySideEffect
     private let _base: AnyHashable
 
-    init<A>(_ action: A) where A: Action {
+    public init<A>(_ action: A) where A: Action {
         if let anyAction = action as? AnyAction {
             _base = anyAction._base
             _perform = anyAction._perform
@@ -29,11 +29,11 @@ struct AnyAction: Action {
         }
     }
 
-    var base: Any {
+    public var base: Any {
         _base.base
     }
 
-    func perform() -> some SideEffect {
+    public func perform() -> some SideEffect {
         _perform()
     }
 }
