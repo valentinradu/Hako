@@ -17,8 +17,7 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
     private let _perform: () -> SideEffect<S, E>
     private let _base: AnyHashable
 
-    public init<A>(_ wrappedAction: () -> A) where A: ActionProtocol, A.S == S, A.E == E {
-        let action = wrappedAction()
+    public init<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
         if let anyAction = action as? Action {
             self = anyAction
             return

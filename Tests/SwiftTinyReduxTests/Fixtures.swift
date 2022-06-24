@@ -18,17 +18,13 @@ typealias IdentityMutation = Mutation<IdentityState, IdentityEnvironment>
 
 struct LoginMutation: MutationProtocol {
     func reduce(state _: inout IdentityState) -> IdentitySideEffect {
-        SideEffect {
-            LoginSideEffect()
-        }
+        SideEffect(LoginSideEffect())
     }
 }
 
 struct LoginSideEffect: SideEffectProtocol {
     func perform(env _: IdentityEnvironment) async throws -> IdentityMutation {
-        Mutation {
-            SetUserMutation(user: .main)
-        }
+        Mutation(SetUserMutation(user: .main))
     }
 }
 

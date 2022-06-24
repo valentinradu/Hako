@@ -23,8 +23,7 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
     private let _base: AnyHashable
     public let isNoop: Bool
 
-    public init<M>(_ wrapped: () -> M) where M: MutationProtocol, M.S == S, M.E == E {
-        let mut = wrapped()
+    public init<M>(_ mut: M) where M: MutationProtocol, M.S == S, M.E == E {
         if let anyMutation = mut as? Mutation {
             self = anyMutation
             return
@@ -43,13 +42,13 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
         _reduce = reduce
         isNoop = false
     }
-    
+
     private init() {
         _base = 0
         _reduce = { _ in fatalError() }
         isNoop = true
     }
-    
+
     public var base: Any {
         _base.base
     }
