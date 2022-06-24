@@ -29,7 +29,8 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Hashable {
         isNoop = false
     }
 
-    public init<SE>(wrapping sideEffect: SE) where SE: SideEffectProtocol, SE.S == S, SE.E == E {
+    public init<SE>(_ wrappedSideEffect: () -> SE) where SE: SideEffectProtocol, SE.S == S, SE.E == E {
+        let sideEffect = wrappedSideEffect()
         _perform = sideEffect.perform
         isNoop = false
     }

@@ -23,7 +23,8 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
     private let _base: AnyHashable
     public let isNoop: Bool
 
-    public init<M>(wrapping mut: M) where M: MutationProtocol, M.S == S, M.E == E {
+    public init<M>(_ wrapped: () -> M) where M: MutationProtocol, M.S == S, M.E == E {
+        let mut = wrapped()
         if let anyMutation = mut as? Mutation {
             self = anyMutation
             return
