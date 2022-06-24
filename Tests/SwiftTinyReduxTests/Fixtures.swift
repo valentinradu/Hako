@@ -13,66 +13,66 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-struct LoginMutation: Mutation {
-    func reduce(state _: inout IdentityState) -> some SideEffect {
-        LoginSideEffect()
+typealias IdentitySideEffect = SideEffect<IdentityState, IdentityEnvironment>
+typealias IdentityMutation = Mutation<IdentityState, IdentityEnvironment>
+
+struct LoginMutation: MutationProtocol {
+    func reduce(state _: inout IdentityState) -> IdentitySideEffect {
+        SideEffect(wrapping: LoginSideEffect())
     }
 }
 
-struct LoginSideEffect: SideEffect {
-    func perform(env _: IdentityEnvironment) async -> some Mutation {
-        SetUserMutation(user: .main)
+struct LoginSideEffect: SideEffectProtocol {
+    func perform(env _: IdentityEnvironment) async throws -> IdentityMutation {
+        Mutation(wrapping: SetUserMutation(user: .main))
     }
 }
 
-struct LogoutMutation: Mutation {
-    func reduce(state: inout IdentityState) -> some SideEffect {
-        state = .guest
-        return SideEffectGroup {
-            LogOutSideEffect()
-            LogOutSideEffect()
-        }
+struct LogoutMutation: MutationProtocol {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect {
+        state.account = .guest
+        return .noop
     }
 }
 
-struct LogOutSideEffect: SideEffect {
-    func perform(env: IdentityEnvironment) async -> some Mutation {
+struct LogOutSideEffect: SideEffectProtocol {
+    func perform(env: IdentityEnvironment) async throws -> IdentityMutation {
         await env.logout()
         return .noop
     }
 }
 
-struct SetUserMutation: Mutation {
+struct SetUserMutation: MutationProtocol {
     let user: User
-    func reduce(state: inout IdentityState) -> some SideEffect {
-        state = .member(user)
+    func reduce(state: inout IdentityState) -> IdentitySideEffect {
+        state.account = .member(user)
         return .noop
     }
 }
 
-struct LikeAction: Mutation {
-    func reduce(state: inout IdentityState) -> some SideEffect {
-        switch state {
+struct LikeAction: MutationProtocol {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect {
+        switch state.account {
         case .guest:
             break
         case var .member(user):
             user.likes += 1
-            state = .member(user)
+            state.account = .member(user)
         }
         return .noop
     }
 }
 
-struct ShowAlert: Mutation {
+struct ShowAlert: MutationProtocol {
     let error: IdentityError
 
-    func reduce(state: inout AppState) -> some SideEffect {
+    func reduce(state: inout IdentityState) -> IdentitySideEffect {
         state.errors.append(error)
         return .noop
     }
 }
 
-enum IdentityState: Hashable {
+enum Account: Hashable {
     case guest
     case member(User)
 
@@ -83,6 +83,18 @@ enum IdentityState: Hashable {
         case let .member(user):
             return user
         }
+    }
+}
+
+struct IdentityState: Hashable {
+    var account: Account
+    var errors: [IdentityError]
+}
+
+extension IdentityState {
+    init() {
+        account = .guest
+        errors = []
     }
 }
 
@@ -102,27 +114,6 @@ actor IdentityEnvironment {
     }
 }
 
-struct AppState: Hashable {
-    var identity: IdentityState
-    var errors: [IdentityError]
-}
-
-extension AppState {
-    init() {
-        self.init(identity: .guest, errors: [])
-    }
-}
-
-struct AppEnvironment {
-    let identity: IdentityEnvironment
-}
-
-extension AppEnvironment {
-    init() {
-        self.init(identity: .init())
-    }
-}
-
 extension Publisher {
     func timeout(_ value: TimeInterval) -> Publishers.Timeout<Self, RunLoop> {
         timeout(RunLoop.SchedulerTimeType.Stride(value),
@@ -130,17 +121,9 @@ extension Publisher {
     }
 }
 
-extension StoreContext {
-    convenience init(state: AppState = .init()) where S == AppState, E == AppEnvironment {
+extension Store {
+    convenience init(state: IdentityState = .init()) where S == IdentityState, E == IdentityEnvironment {
         self.init(state: state,
                   env: .init())
-    }
-}
-
-extension StoreCoordinator {
-    init(context: StoreContext<AppState, AppEnvironment>) {
-        self = StoreCoordinator()
-            .add(context: context)
-            .add(context: context.partial(state: \.identity))
     }
 }

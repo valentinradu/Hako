@@ -8,93 +8,63 @@
 import Combine
 import Foundation
 
-public protocol SideEffect: Hashable {
+public protocol SideEffectProtocol {
+    associatedtype S: Hashable
     associatedtype E
-    associatedtype M: Mutation
 
-    func perform(env: E) async throws -> M
+    func perform(env: E) async throws -> Mutation<S, E>
+    var isNoop: Bool { get }
 }
 
-public struct NoopSideEffect: SideEffect {
-    public func perform(env _: Any) async -> some Mutation {
-        assertionFailure()
-        return NoopMutation()
-    }
+public extension SideEffectProtocol {
+    var isNoop: Bool { false }
 }
 
-public struct InlineSideEffect<E>: SideEffect {
-    private let _perform: (E) async throws -> AnyMutation
-    private let _uuid: UUID
+public struct SideEffect<S, E>: SideEffectProtocol where S: Hashable {
+    private let _perform: (E) async throws -> Mutation<S, E>
+    public let isNoop: Bool
 
-    public init<M>(perform: @escaping (E) async throws -> M) where M: Mutation {
-        _perform = { try await AnyMutation(perform($0)) }
-        _uuid = UUID()
+    public init(_ perform: @escaping (E) async throws -> Mutation<S, E>) {
+        _perform = perform
+        isNoop = false
     }
 
-    public func perform(env: E) async throws -> some Mutation {
+    public init<SE>(wrapping sideEffect: SE) where SE: SideEffectProtocol, SE.S == S, SE.E == E {
+        _perform = sideEffect.perform
+        isNoop = false
+    }
+
+    public init() {
+        _perform = { _ in fatalError() }
+        isNoop = true
+    }
+
+    public func perform(env: E) async throws -> Mutation<S, E> {
         try await _perform(env)
     }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_uuid)
-    }
-
-    public static func == (_: InlineSideEffect<E>, _: InlineSideEffect<E>) -> Bool {
-        false
-    }
 }
 
-public extension SideEffect where Self == NoopSideEffect {
-    static var noop: NoopSideEffect { NoopSideEffect() }
+public enum SideEffectGroupStrategy {
+    case serial
+    case concurrent
+}
+
+public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Hashable {
+    let sideEffects: [SideEffect<S, E>]
+    let strategy: SideEffectGroupStrategy
+
+    public init(strategy: SideEffectGroupStrategy = .serial,
+                sideEffects: [SideEffect<S, E>])
+    {
+        self.sideEffects = sideEffects
+        self.strategy = strategy
+    }
+
+    public func perform(env _: E) async throws -> Mutation<S, E> {
+        .noop
+    }
 }
 
 public extension SideEffect {
-    func asAnySideEffect() -> AnySideEffect {
-        AnySideEffect(self)
-    }
-}
-
-public struct AnySideEffect: SideEffect {
-    private let _perform: (Any) async throws -> AnyMutation
-    private let _base: AnyHashable
-
-    public var base: Any {
-        _base.base
-    }
-
-    public init<SE>(_ sideEffect: SE) where SE: SideEffect {
-        if let anySideEffect = sideEffect as? AnySideEffect {
-            _base = anySideEffect._base
-            _perform = anySideEffect._perform
-            return
-        }
-
-        _base = sideEffect
-        _perform = { env in
-            guard let env = env as? SE.E else {
-                return AnyMutation(.noop)
-            }
-
-            if type(of: sideEffect) == NoopSideEffect.self {
-                return AnyMutation(.noop)
-            }
-
-            let nextMutation = try await sideEffect.perform(env: env)
-            return AnyMutation(nextMutation)
-        }
-    }
-
-    public func perform(env: Any) async throws -> some Mutation {
-        try await _perform(env)
-    }
-}
-
-extension AnySideEffect: Hashable {
-    public static func == (lhs: AnySideEffect, rhs: AnySideEffect) -> Bool {
-        lhs._base == rhs._base
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_base)
-    }
+    static var noop: SideEffect<S, E> { SideEffect() }
 }

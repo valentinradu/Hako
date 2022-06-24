@@ -7,76 +7,73 @@
 
 import Foundation
 
-public protocol Mutation: Hashable {
+public protocol MutationProtocol: Hashable {
     associatedtype S: Hashable
-    associatedtype SE: SideEffect
-    @SideEffectBuilder func reduce(state: inout S) -> SE
+    associatedtype E
+    func reduce(state: inout S) -> SideEffect<S, E>
+    var isNoop: Bool { get }
 }
 
-public struct NoopMutation: Mutation {
-    public func reduce(state _: inout AnyHashable) -> some SideEffect {
-        assertionFailure()
-        return NoopSideEffect()
-    }
+public extension MutationProtocol {
+    var isNoop: Bool { false }
 }
 
-public extension Mutation where Self == NoopMutation {
-    static var noop: NoopMutation { NoopMutation() }
-}
-
-public extension Mutation {
-    func asAnyMutation() -> AnyMutation {
-        AnyMutation(self)
-    }
-}
-
-public struct AnyMutation: Mutation {
-    private let _reduce: (inout AnyHashable) -> AnySideEffect
+public struct Mutation<S, E>: MutationProtocol where S: Hashable {
+    private let _reduce: (inout S) -> SideEffect<S, E>
     private let _base: AnyHashable
+    public let isNoop: Bool
 
-    public init<M>(_ mut: M) where M: Mutation {
-        if let anyMutation = mut as? AnyMutation {
-            _base = anyMutation._base
-            _reduce = anyMutation._reduce
+    public init<M>(wrapping mut: M) where M: MutationProtocol, M.S == S, M.E == E {
+        if let anyMutation = mut as? Mutation {
+            self = anyMutation
             return
         }
 
         _base = mut
         _reduce = { state in
-            guard var oldState = state.base as? M.S else {
-                return AnySideEffect(.noop)
-            }
-
-            if type(of: mut) == NoopMutation.self {
-                return AnySideEffect(.noop)
-            }
-
-            let sideEffect = mut.reduce(state: &oldState)
-            state = AnyHashable(oldState)
-
-            return AnySideEffect(sideEffect)
+            let sideEffect = mut.reduce(state: &state)
+            return sideEffect
         }
+        isNoop = false
     }
 
+    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>) {
+        _base = UUID()
+        _reduce = reduce
+        isNoop = false
+    }
+    
+    private init() {
+        _base = 0
+        _reduce = { _ in fatalError() }
+        isNoop = true
+    }
+    
     public var base: Any {
         _base.base
     }
 
-    public func reduce(state: inout AnyHashable) -> some SideEffect {
+    public func reduce(state: inout S) -> SideEffect<S, E> {
         _reduce(&state)
     }
 }
 
-extension AnyMutation: Hashable {
-    public static func == (lhs: AnyMutation, rhs: AnyMutation) -> Bool {
+extension Mutation: Hashable {
+    public static func == (lhs: Mutation, rhs: Mutation) -> Bool {
         lhs._base == rhs._base
     }
 
-    public static func == <M>(lhs: AnyMutation, rhs: M) -> Bool where M: Mutation {
+    public static func == <M>(lhs: Mutation, rhs: M) -> Bool where M: MutationProtocol {
         lhs._base == AnyHashable(rhs)
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(_base)
+    }
+}
+
+public extension Mutation {
+    static var noop: Mutation<S, E> {
+        Mutation()
     }
 }

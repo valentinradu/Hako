@@ -7,43 +7,46 @@
 
 import Foundation
 
-public protocol Action: Hashable {
-    associatedtype SE: SideEffect
-    @SideEffectBuilder func perform() -> SE
+public protocol ActionProtocol: Hashable {
+    associatedtype S: Hashable
+    associatedtype E
+    func perform() -> SideEffect<S, E>
 }
 
-public struct AnyAction: Action {
-    private let _perform: () -> AnySideEffect
+public struct Action<S, E>: ActionProtocol where S: Hashable {
+    private let _perform: () -> SideEffect<S, E>
     private let _base: AnyHashable
 
-    public init<A>(_ action: A) where A: Action {
-        if let anyAction = action as? AnyAction {
-            _base = anyAction._base
-            _perform = anyAction._perform
+    public init<A>(wrapping action: A) where A: ActionProtocol, A.S == S, A.E == E {
+        if let anyAction = action as? Action {
+            self = anyAction
             return
         }
 
         _base = action
-        _perform = {
-            AnySideEffect(action.perform())
-        }
+        _perform = action.perform
+    }
+
+    public init(_ perform: @escaping () -> SideEffect<S, E>) {
+        _base = UUID()
+        _perform = perform
     }
 
     public var base: Any {
         _base.base
     }
 
-    public func perform() -> some SideEffect {
+    public func perform() -> SideEffect<S, E> {
         _perform()
     }
 }
 
-extension AnyAction {
-    public static func == (lhs: AnyAction, rhs: AnyAction) -> Bool {
+extension Action: Hashable {
+    public static func == (lhs: Action, rhs: Action) -> Bool {
         lhs._base == rhs._base
     }
 
-    public static func == <M>(lhs: AnyAction, rhs: M) -> Bool where M: Mutation {
+    public static func == <A>(lhs: Action, rhs: A) -> Bool where A: ActionProtocol {
         lhs._base == AnyHashable(rhs)
     }
 
