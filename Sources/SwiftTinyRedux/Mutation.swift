@@ -37,9 +37,9 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
         isNoop = false
     }
 
-    // Abusing #function is a hack beyond hacks, and I'm trying to figure a better way to do it
+    // Abusing #function + #line is a hack beyond hacks, and I'm trying to figure a better way to do it
     // but since actions/mutations are only compared in tests, we can live with it for now.
-    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function) {
+    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function + String(#line)) {
         _base = id
         _reduce = reduce
         isNoop = false
