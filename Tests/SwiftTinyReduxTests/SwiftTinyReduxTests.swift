@@ -15,12 +15,6 @@ final class SwiftTinyReduxTests: XCTestCase {
         context.dispatch(SetUserMutation(user: .main))
         XCTAssertEqual(context.state.account, .member(User.main))
     }
-    
-    func testGroupDispatch() {
-        let context = Store()
-        context.dispatch(LogoutMutation())
-//        XCTAssertEqual(context.state.account, .member(User.main))
-    }
 
     func testPublishedState() async throws {
         let context = Store()

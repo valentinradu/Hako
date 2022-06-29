@@ -37,8 +37,10 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
         isNoop = false
     }
 
-    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>) {
-        _base = UUID()
+    // Abusing #function is a hack beyond hacks, and I'm trying to figure a better way to do it
+    // but since actions/mutations are only compared in tests, we can live with it for now.
+    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function) {
+        _base = id
         _reduce = reduce
         isNoop = false
     }

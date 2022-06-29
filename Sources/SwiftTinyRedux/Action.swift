@@ -27,8 +27,10 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
         _perform = action.perform
     }
 
-    public init(_ perform: @escaping () -> SideEffect<S, E>) {
-        _base = UUID()
+    // Abusing #function is a hack beyond hacks, and I'm trying to figure a better way to do it
+    // but since actions/mutations are only compared in tests, we can live with it for now.
+    public init(_ perform: @escaping () -> SideEffect<S, E>, id: String = #function) {
+        _base = id
         _perform = perform
     }
 
