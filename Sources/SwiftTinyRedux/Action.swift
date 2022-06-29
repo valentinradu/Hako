@@ -27,10 +27,8 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
         _perform = action.perform
     }
 
-    // Abusing #function + #line is a hack beyond hacks, and I'm trying to figure a better way to do it
-    // but since actions/mutations are only compared in tests, we can live with it for now.
-    public init(_ perform: @escaping () -> SideEffect<S, E>, id: String = #function + String(#line)) {
-        _base = id
+    public init(_ perform: @escaping () -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
+        _base = id + String(salt)
         _perform = perform
     }
 
