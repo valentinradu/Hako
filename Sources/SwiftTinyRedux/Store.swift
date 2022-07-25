@@ -36,8 +36,7 @@ public class Store<S, E>: ObservableObject where S: Hashable {
     private var _errorMutations: [ErrorMutation<S, E>]
 
     public init(state: S,
-                env: E)
-    {
+                env: E) {
         _env = env
         _state = state
         _queue = DispatchQueue(label: "com.swifttinyredux.queue",
@@ -46,13 +45,13 @@ public class Store<S, E>: ObservableObject where S: Hashable {
     }
 }
 
-extension Store {
-    public fileprivate(set) var state: S {
+public extension Store {
+    var state: S {
         get { _queue.sync { _state } }
         set { write { $0 = newValue } }
     }
 
-    private var env: E {
+    var env: E {
         _queue.sync { _env }
     }
 
@@ -67,8 +66,7 @@ extension Store {
                 }
             }
             return result
-        }
-        else {
+        } else {
             return DispatchQueue.main.sync {
                 var state = _state
                 let result = update(&state)
@@ -98,8 +96,7 @@ public extension Store {
         Task.detached { [weak self] in
             do {
                 try await self?.perform(sideEffect)
-            }
-            catch {
+            } catch {
                 self?.catchToSideEffect(error: error)
             }
         }
@@ -110,8 +107,7 @@ public extension Store {
         Task.detached { [weak self] in
             do {
                 try await self?.perform(sideEffect)
-            }
-            catch {
+            } catch {
                 self?.catchToSideEffect(error: error)
             }
         }
@@ -159,8 +155,7 @@ public extension Store {
             Task.detached { [weak self] in
                 do {
                     try await self?.perform(sideEffect)
-                }
-                catch {
+                } catch {
                     self?.catchToSideEffect(error: error)
                 }
             }
