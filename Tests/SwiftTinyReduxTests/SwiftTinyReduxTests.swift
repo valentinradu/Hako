@@ -16,7 +16,7 @@ final class SwiftTinyReduxTests: XCTestCase {
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
-    func testPublishedState() async throws {
+    func testPublishedState() async {
         let context = Store()
         var cancellables: Set<AnyCancellable> = []
         var wasCalledOnMainThread = false
@@ -32,7 +32,7 @@ final class SwiftTinyReduxTests: XCTestCase {
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
-    func testMultithreadDispatch() async throws {
+    func testMultithreadDispatch() async {
         let context = Store(state: .init(account: .member(.main), errors: []))
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
         var cancellables: Set<AnyCancellable> = []
