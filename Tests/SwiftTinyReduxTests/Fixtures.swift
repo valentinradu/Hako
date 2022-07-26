@@ -23,7 +23,7 @@ struct LoginMutation: MutationProtocol {
 }
 
 struct LoginSideEffect: SideEffectProtocol {
-    func perform(env _: IdentityEnvironment) async throws -> IdentityMutation {
+    func perform(env _: IdentityEnvironment) async -> IdentityMutation {
         Mutation(SetUserMutation(user: .main))
     }
 }
@@ -36,7 +36,7 @@ struct LogoutMutation: MutationProtocol {
 }
 
 struct LogOutSideEffect: SideEffectProtocol {
-    func perform(env: IdentityEnvironment) async throws -> IdentityMutation {
+    func perform(env: IdentityEnvironment) async -> IdentityMutation {
         await env.logout()
         return .noop
     }

@@ -7,33 +7,10 @@
 
 import Foundation
 
-public protocol ErrorMutationProtocol {
-    associatedtype S: Hashable
-    associatedtype E
-    func reduce(error: Error) -> SideEffect<S, E>
-}
-
-public struct ErrorMutation<S, E>: ErrorMutationProtocol where S: Hashable {
-    private var _reduce: (Error) -> SideEffect<S, E>
-
-    public init(_ reduce: @escaping (Error) -> SideEffect<S, E>) {
-        _reduce = reduce
-    }
-
-    public init<EM>(wrapping: EM) where EM: ErrorMutationProtocol, EM.S == S, EM.E == E {
-        _reduce = wrapping.reduce
-    }
-
-    public func reduce(error: Error) -> SideEffect<S, E> {
-        _reduce(error)
-    }
-}
-
 public class Store<S, E>: ObservableObject where S: Hashable {
     private let _env: E
     private let _queue: DispatchQueue
     private var _state: S
-    private var _errorMutations: [ErrorMutation<S, E>]
 
     public init(state: S,
                 env: E) {
@@ -41,7 +18,6 @@ public class Store<S, E>: ObservableObject where S: Hashable {
         _state = state
         _queue = DispatchQueue(label: "com.swifttinyredux.queue",
                                attributes: .concurrent)
-        _errorMutations = []
     }
 }
 
@@ -94,28 +70,20 @@ public extension Store {
         }
 
         Task.detached { [weak self] in
-            do {
-                try await self?.perform(sideEffect)
-            } catch {
-                self?.catchToSideEffect(error: error)
-            }
+            await self?.perform(sideEffect)
         }
     }
 
     func dispatch<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
         let sideEffect = action.perform()
         Task.detached { [weak self] in
-            do {
-                try await self?.perform(sideEffect)
-            } catch {
-                self?.catchToSideEffect(error: error)
-            }
+            await self?.perform(sideEffect)
         }
     }
 }
 
 extension Store {
-    func perform<SE>(_ sideEffect: SE) async throws where SE: SideEffectProtocol, SE.S == S, SE.E == E {
+    func perform<SE>(_ sideEffect: SE) async where SE: SideEffectProtocol, SE.S == S, SE.E == E {
         guard !sideEffect.isNoop else {
             return
         }
@@ -124,41 +92,20 @@ extension Store {
             switch groupSideEffect.strategy {
             case .serial:
                 for sideEffect in groupSideEffect.sideEffects {
-                    try await perform(sideEffect)
+                    await perform(sideEffect)
                 }
             case .concurrent:
-                await withThrowingTaskGroup(of: Void.self) { group in
+                await withTaskGroup(of: Void.self) { group in
                     for sideEffect in groupSideEffect.sideEffects {
                         group.addTask { [weak self] in
-                            try await self?.perform(sideEffect)
+                            await self?.perform(sideEffect)
                         }
                     }
                 }
             }
         default:
-            let nextMut = try await sideEffect.perform(env: env)
+            let nextMut = await sideEffect.perform(env: env)
             dispatch(nextMut)
-        }
-    }
-}
-
-public extension Store {
-    func add<EM>(_ mut: EM) where EM: ErrorMutationProtocol, EM.S == S, EM.E == E {
-        _queue.sync {
-            _errorMutations.append(ErrorMutation(wrapping: mut))
-        }
-    }
-
-    func catchToSideEffect(error: Error) {
-        for mut in _errorMutations {
-            let sideEffect = mut.reduce(error: error)
-            Task.detached { [weak self] in
-                do {
-                    try await self?.perform(sideEffect)
-                } catch {
-                    self?.catchToSideEffect(error: error)
-                }
-            }
         }
     }
 }

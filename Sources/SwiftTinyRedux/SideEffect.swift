@@ -12,7 +12,7 @@ public protocol SideEffectProtocol {
     associatedtype S: Hashable
     associatedtype E
 
-    func perform(env: E) async throws -> Mutation<S, E>
+    func perform(env: E) async -> Mutation<S, E>
     var isNoop: Bool { get }
 }
 
@@ -21,10 +21,10 @@ public extension SideEffectProtocol {
 }
 
 public struct SideEffect<S, E>: SideEffectProtocol where S: Hashable {
-    private let _perform: (E) async throws -> Mutation<S, E>
+    private let _perform: (E) async -> Mutation<S, E>
     public let isNoop: Bool
 
-    public init(_ perform: @escaping (E) async throws -> Mutation<S, E>) {
+    public init(_ perform: @escaping (E) async -> Mutation<S, E>) {
         _perform = perform
         isNoop = false
     }
@@ -39,8 +39,8 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Hashable {
         isNoop = true
     }
 
-    public func perform(env: E) async throws -> Mutation<S, E> {
-        try await _perform(env)
+    public func perform(env: E) async -> Mutation<S, E> {
+        await _perform(env)
     }
 }
 
@@ -54,13 +54,12 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Hashable {
     let strategy: SideEffectGroupStrategy
 
     public init(strategy: SideEffectGroupStrategy = .serial,
-                sideEffects: [SideEffect<S, E>])
-    {
+                sideEffects: [SideEffect<S, E>]) {
         self.sideEffects = sideEffects
         self.strategy = strategy
     }
 
-    public func perform(env _: E) async throws -> Mutation<S, E> {
+    public func perform(env _: E) async -> Mutation<S, E> {
         .noop
     }
 }
