@@ -55,4 +55,25 @@ final class SwiftTinyReduxTests: XCTestCase {
 
         wait(for: [expectation], timeout: 1)
     }
+
+    func testAsyncSequenceIngest() {
+        var count = 0
+        var cancellables: Set<AnyCancellable> = []
+        let expectation = XCTestExpectation()
+        let stream = AsyncStream<SetUserMutation> {
+            SetUserMutation(user: .main)
+        }
+        let context = Store()
+        context.ingest(stream)
+        
+        context.objectWillChange
+            .sink {
+                count += 1
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+        
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(count, 1)
+    }
 }

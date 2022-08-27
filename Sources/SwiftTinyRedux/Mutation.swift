@@ -36,7 +36,7 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
         }
         isNoop = false
     }
-    
+
     public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
         _base = id + String(salt)
         _reduce = reduce
