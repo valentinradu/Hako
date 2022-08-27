@@ -10,11 +10,11 @@ import Foundation
 public protocol ActionProtocol: Hashable {
     associatedtype S: Hashable
     associatedtype E
-    func perform() -> SideEffect<S, E>
+    func perform(state: S) -> SideEffect<S, E>
 }
 
 public struct Action<S, E>: ActionProtocol where S: Hashable {
-    private let _perform: () -> SideEffect<S, E>
+    private let _perform: (S) -> SideEffect<S, E>
     private let _base: AnyHashable
 
     public init<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
@@ -27,7 +27,7 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
         _perform = action.perform
     }
 
-    public init(_ perform: @escaping () -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
+    public init(_ perform: @escaping (S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
         _base = id + String(salt)
         _perform = perform
     }
@@ -36,8 +36,8 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
         _base.base
     }
 
-    public func perform() -> SideEffect<S, E> {
-        _perform()
+    public func perform(state: S) -> SideEffect<S, E> {
+        _perform(state)
     }
 }
 

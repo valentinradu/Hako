@@ -95,7 +95,7 @@ public extension Store {
     }
 
     func dispatch<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
-        let sideEffect = action.perform()
+        let sideEffect = action.perform(state: state)
         let uuid = UUID()
         let task = Task.detached { [weak self] in
             await self?.perform(sideEffect)
