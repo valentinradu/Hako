@@ -18,13 +18,10 @@ final class SwiftTinyReduxTests: XCTestCase {
 
     func testPublishedState() async {
         let context = Store()
-        var cancellables: Set<AnyCancellable> = []
         var wasCalledOnMainThread = false
-        context.willChange
-            .sink {
-                wasCalledOnMainThread = Thread.isMainThread
-            }
-            .store(in: &cancellables)
+        context.willChange {
+            wasCalledOnMainThread = Thread.isMainThread
+        }
 
         context.dispatch(SetUserMutation(user: .main))
 
@@ -35,17 +32,14 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testMultithreadDispatch() async {
         let context = Store(state: .init(account: .member(.main), errors: []))
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
-        var cancellables: Set<AnyCancellable> = []
         let expectation = XCTestExpectation()
         var likeCount = 0
-        context.willChange
-            .sink {
-                likeCount += 1
-                if likeCount == 100 {
-                    expectation.fulfill()
-                }
+        context.willChange {
+            likeCount += 1
+            if likeCount == 100 {
+                expectation.fulfill()
             }
-            .store(in: &cancellables)
+        }
 
         for _ in 0 ..< 100 {
             queue.async {
@@ -58,21 +52,18 @@ final class SwiftTinyReduxTests: XCTestCase {
 
     func testAsyncSequenceIngest() {
         var count = 0
-        var cancellables: Set<AnyCancellable> = []
         let expectation = XCTestExpectation()
         let stream = AsyncStream<SetUserMutation> {
             SetUserMutation(user: .main)
         }
         let context = Store()
         context.ingest(stream)
-        
-        context.willChange
-            .sink {
-                count += 1
-                expectation.fulfill()
-            }
-            .store(in: &cancellables)
-        
+
+        context.willChange {
+            count += 1
+            expectation.fulfill()
+        }
+
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(count, 1)
     }

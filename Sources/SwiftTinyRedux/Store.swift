@@ -6,20 +6,19 @@
 //
 
 import Foundation
-import Combine
 
 public class Store<S, E> where S: Hashable {
     private let _env: E
     private var _state: S
+    private var _willChange: () -> Void
     private var _tasks: [UUID: Task<Void, Never>]
-    public let willChange: PassthroughSubject<Void, Never>
 
     public init(state: S,
                 env: E) {
         _env = env
         _state = state
         _tasks = [:]
-        willChange = .init()
+        _willChange = {}
     }
 
     deinit {
@@ -39,6 +38,10 @@ public extension Store {
         runOnMainThread { _env }
     }
 
+    func willChange(_ fn: @escaping () -> Void) {
+        runOnMainThread { _willChange = fn }
+    }
+
     private var tasks: [UUID: Task<Void, Never>] {
         get { runOnMainThread { _tasks } }
         set { runOnMainThread { _tasks = newValue } }
@@ -49,7 +52,7 @@ public extension Store {
             var state = _state
             let result = update(&state)
             if state != _state {
-                willChange.send()
+                _willChange()
                 _state = state
             }
             return result
