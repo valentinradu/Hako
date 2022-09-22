@@ -9,7 +9,6 @@ import Foundation
 
 public class Store<S, E>: ObservableObject where S: Hashable {
     private let _env: E
-    private let _queue: DispatchQueue
     private var _state: S
     private var _tasks: [UUID: Task<Void, Never>]
 
@@ -17,8 +16,6 @@ public class Store<S, E>: ObservableObject where S: Hashable {
                 env: E) {
         _env = env
         _state = state
-        _queue = DispatchQueue(label: "com.swifttinyredux.queue",
-                               attributes: .concurrent)
         _tasks = [:]
     }
 
@@ -31,46 +28,37 @@ public class Store<S, E>: ObservableObject where S: Hashable {
 
 public extension Store {
     var state: S {
-        get { _queue.sync { _state } }
+        get { runOnMainThread { _state } }
         set { write { $0 = newValue } }
     }
 
     var env: E {
-        _queue.sync { _env }
+        runOnMainThread { _env }
     }
 
     private var tasks: [UUID: Task<Void, Never>] {
-        get { _queue.sync { _tasks } }
-        set {
-            _queue.sync(flags: .barrier) {
-                _tasks = newValue
-            }
-        }
+        get { runOnMainThread { _tasks } }
+        set { runOnMainThread { _tasks = newValue } }
     }
 
     private func write<R>(update: (inout S) -> R) -> R where S: Hashable {
-        if Thread.isMainThread {
+        runOnMainThread {
             var state = _state
             let result = update(&state)
-            if _state != state {
+            if state != _state {
                 objectWillChange.send()
-                _queue.sync(flags: .barrier) {
-                    _state = state
-                }
+                _state = state
             }
             return result
+        }
+    }
+
+    private func runOnMainThread<R>(_ fn: () -> R) -> R {
+        if Thread.isMainThread {
+            return fn()
         } else {
             return DispatchQueue.main.sync {
-                var state = _state
-                let result = update(&state)
-                if _state != state {
-                    objectWillChange.send()
-                    _queue.sync(flags: .barrier) {
-                        _state = state
-                    }
-                }
-
-                return result
+                fn()
             }
         }
     }
