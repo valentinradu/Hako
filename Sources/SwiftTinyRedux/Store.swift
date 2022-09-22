@@ -6,17 +6,20 @@
 //
 
 import Foundation
+import Combine
 
-public class Store<S, E>: ObservableObject where S: Hashable {
+public class Store<S, E> where S: Hashable {
     private let _env: E
     private var _state: S
     private var _tasks: [UUID: Task<Void, Never>]
+    public let willChange: PassthroughSubject<Void, Never>
 
     public init(state: S,
                 env: E) {
         _env = env
         _state = state
         _tasks = [:]
+        willChange = .init()
     }
 
     deinit {
@@ -46,7 +49,7 @@ public extension Store {
             var state = _state
             let result = update(&state)
             if state != _state {
-                objectWillChange.send()
+                willChange.send()
                 _state = state
             }
             return result

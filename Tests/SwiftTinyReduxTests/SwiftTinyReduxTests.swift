@@ -20,7 +20,7 @@ final class SwiftTinyReduxTests: XCTestCase {
         let context = Store()
         var cancellables: Set<AnyCancellable> = []
         var wasCalledOnMainThread = false
-        context.objectWillChange
+        context.willChange
             .sink {
                 wasCalledOnMainThread = Thread.isMainThread
             }
@@ -38,7 +38,7 @@ final class SwiftTinyReduxTests: XCTestCase {
         var cancellables: Set<AnyCancellable> = []
         let expectation = XCTestExpectation()
         var likeCount = 0
-        context.objectWillChange
+        context.willChange
             .sink {
                 likeCount += 1
                 if likeCount == 100 {
@@ -66,7 +66,7 @@ final class SwiftTinyReduxTests: XCTestCase {
         let context = Store()
         context.ingest(stream)
         
-        context.objectWillChange
+        context.willChange
             .sink {
                 count += 1
                 expectation.fulfill()
