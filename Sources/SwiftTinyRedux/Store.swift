@@ -18,7 +18,7 @@ public class Store<S, E> where S: Hashable {
         _env = env
         _state = state
         _tasks = [:]
-        _willChange = {}
+        _willChange = { assertionFailure() }
     }
 
     deinit {

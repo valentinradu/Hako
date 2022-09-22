@@ -12,6 +12,7 @@ import XCTest
 final class SwiftTinyReduxTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
+        context.willChange {}
         context.dispatch(SetUserMutation(user: .main))
         XCTAssertEqual(context.state.account, .member(User.main))
     }
