@@ -9,7 +9,7 @@ import Combine
 import Foundation
 
 public protocol SideEffectProtocol {
-    associatedtype S: Hashable
+    associatedtype S: Equatable
     associatedtype E
 
     func perform(env: E) async -> Mutation<S, E>
@@ -20,7 +20,7 @@ public extension SideEffectProtocol {
     var isNoop: Bool { false }
 }
 
-public struct SideEffect<S, E>: SideEffectProtocol where S: Hashable {
+public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
     private let _perform: (E) async -> Mutation<S, E>
     public let isNoop: Bool
 
@@ -49,7 +49,7 @@ public enum SideEffectGroupStrategy {
     case concurrent
 }
 
-public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Hashable {
+public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
     let sideEffects: [SideEffect<S, E>]
     let strategy: SideEffectGroupStrategy
 

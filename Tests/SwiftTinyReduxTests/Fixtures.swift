@@ -72,7 +72,7 @@ struct ShowAlert: MutationProtocol {
     }
 }
 
-enum Account: Hashable {
+enum Account: Equatable {
     case guest
     case member(User)
 
@@ -86,7 +86,7 @@ enum Account: Hashable {
     }
 }
 
-struct IdentityState: Hashable {
+struct IdentityState: Equatable {
     var account: Account
     var errors: [IdentityError]
 }
@@ -98,7 +98,7 @@ extension IdentityState {
     }
 }
 
-struct User: Hashable {
+struct User: Equatable {
     static let main = User(name: "John",
                            email: "john@localhost.com",
                            likes: 0)

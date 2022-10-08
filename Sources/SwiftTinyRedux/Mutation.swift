@@ -7,8 +7,8 @@
 
 import Foundation
 
-public protocol MutationProtocol: Hashable {
-    associatedtype S: Hashable
+public protocol MutationProtocol: Equatable {
+    associatedtype S: Equatable
     associatedtype E
     func reduce(state: inout S) -> SideEffect<S, E>
     var isNoop: Bool { get }
@@ -18,9 +18,9 @@ public extension MutationProtocol {
     var isNoop: Bool { false }
 }
 
-public struct Mutation<S, E>: MutationProtocol where S: Hashable {
+public struct Mutation<S, E>: MutationProtocol where S: Equatable {
     private let _reduce: (inout S) -> SideEffect<S, E>
-    private let _base: AnyHashable
+    private let _base: AnyEquatable
     public let isNoop: Bool
 
     public init<M>(_ mut: M) where M: MutationProtocol, M.S == S, M.E == E {
@@ -29,7 +29,7 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
             return
         }
 
-        _base = mut
+        _base = AnyEquatable(mut)
         _reduce = { state in
             let sideEffect = mut.reduce(state: &state)
             return sideEffect
@@ -38,13 +38,13 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
     }
 
     public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
-        _base = id + String(salt)
+        _base = AnyEquatable(id + String(salt))
         _reduce = reduce
         isNoop = false
     }
 
     private init() {
-        _base = 0
+        _base = AnyEquatable(0)
         _reduce = { _ in fatalError() }
         isNoop = true
     }
@@ -58,17 +58,13 @@ public struct Mutation<S, E>: MutationProtocol where S: Hashable {
     }
 }
 
-extension Mutation: Hashable {
+extension Mutation: Equatable {
     public static func == (lhs: Mutation, rhs: Mutation) -> Bool {
         lhs._base == rhs._base
     }
 
     public static func == <M>(lhs: Mutation, rhs: M) -> Bool where M: MutationProtocol {
-        lhs._base == AnyHashable(rhs)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_base)
+        AnyEquatable(lhs._base) == AnyEquatable(rhs)
     }
 }
 

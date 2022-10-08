@@ -7,15 +7,15 @@
 
 import Foundation
 
-public protocol ActionProtocol: Hashable {
-    associatedtype S: Hashable
+public protocol ActionProtocol: Equatable {
+    associatedtype S: Equatable
     associatedtype E
     func perform(state: S) -> SideEffect<S, E>
 }
 
-public struct Action<S, E>: ActionProtocol where S: Hashable {
+public struct Action<S, E>: ActionProtocol where S: Equatable {
     private let _perform: (S) -> SideEffect<S, E>
-    private let _base: AnyHashable
+    private let _base: AnyEquatable
 
     public init<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
         if let anyAction = action as? Action {
@@ -23,12 +23,12 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
             return
         }
 
-        _base = action
+        _base = AnyEquatable(action)
         _perform = action.perform
     }
 
     public init(_ perform: @escaping (S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
-        _base = id + String(salt)
+        _base = AnyEquatable(id + String(salt))
         _perform = perform
     }
 
@@ -41,16 +41,12 @@ public struct Action<S, E>: ActionProtocol where S: Hashable {
     }
 }
 
-extension Action: Hashable {
+extension Action: Equatable {
     public static func == (lhs: Action, rhs: Action) -> Bool {
         lhs._base == rhs._base
     }
 
     public static func == <A>(lhs: Action, rhs: A) -> Bool where A: ActionProtocol {
-        lhs._base == AnyHashable(rhs)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(_base)
+        AnyEquatable(lhs._base) == AnyEquatable(rhs)
     }
 }

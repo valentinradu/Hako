@@ -7,7 +7,7 @@
 
 import Foundation
 
-public class Store<S, E> where S: Hashable {
+public class Store<S, E> where S: Equatable {
     private let _env: E
     private var _state: S
     private var _willChange: () -> Void
@@ -47,7 +47,7 @@ public extension Store {
         set { runOnMainThread { _tasks = newValue } }
     }
 
-    private func write<R>(update: (inout S) -> R) -> R where S: Hashable {
+    private func write<R>(update: (inout S) -> R) -> R where S: Equatable {
         runOnMainThread {
             var state = _state
             let result = update(&state)
