@@ -64,7 +64,7 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
     }
 }
 
-public extension SideEffect {
+public extension SideEffectProtocol {
     static var noop: SideEffect<S, E> {
         SideEffect()
     }

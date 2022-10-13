@@ -17,7 +17,7 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
     static func setUser(_ user: User) -> Mutation<S, E> {
         Mutation { state in
             state.account = .member(user)
-            return SideEffect.noop
+            return .noop
         }
     }
 
@@ -26,7 +26,7 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
             SideEffect { _ in
                 Mutation { state in
                     state.account = .member(.main)
-                    return SideEffect.noop
+                    return .noop
                 }
             }
         }
@@ -38,7 +38,7 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
                 SideEffect<S, E> { _ in
                     Mutation { state in
                         state.account = .member(.main)
-                        return SideEffect.noop
+                        return .noop
                     }
                 }
             ])
@@ -48,14 +48,14 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
     static var logout: Mutation<S, E> {
         Mutation { state in
             state.account = .guest
-            return SideEffect.noop
+            return .noop
         }
     }
 
     static func showAlert(error: IdentityError) -> Mutation<S, E> {
         Mutation { state in
             state.errors.append(error)
-            return SideEffect.noop
+            return .noop
         }
     }
 
@@ -68,7 +68,7 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
                 user.likes += 1
                 state.account = .member(user)
             }
-            return SideEffect.noop
+            return .noop
         }
     }
 }

@@ -37,7 +37,13 @@ public struct Mutation<S, E>: MutationProtocol where S: Equatable {
         isNoop = false
     }
 
-    public init(_ reduce: @escaping (inout S) -> any SideEffectProtocol<S, E>, id: String = #function, salt: Int = #line) {
+    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
+        _base = AnyEquatable(id + String(salt))
+        _reduce = reduce
+        isNoop = false
+    }
+
+    public init(_ reduce: @escaping (inout S) -> SideEffectGroup<S, E>, id: String = #function, salt: Int = #line) {
         _base = AnyEquatable(id + String(salt))
         _reduce = reduce
         isNoop = false
@@ -68,7 +74,7 @@ extension Mutation: Equatable {
     }
 }
 
-public extension Mutation {
+public extension MutationProtocol {
     static var noop: Mutation<S, E> {
         Mutation()
     }
