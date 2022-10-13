@@ -13,7 +13,7 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
         context.willChange {}
-        context.dispatch(SetUserMutation(user: .main))
+        context.dispatch(.setUser(.main))
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
@@ -24,7 +24,7 @@ final class SwiftTinyReduxTests: XCTestCase {
             wasCalledOnMainThread = Thread.isMainThread
         }
 
-        context.dispatch(SetUserMutation(user: .main))
+        context.dispatch(.setUser(.main))
 
         XCTAssertTrue(wasCalledOnMainThread)
         XCTAssertEqual(context.state.account, .member(User.main))
@@ -44,7 +44,7 @@ final class SwiftTinyReduxTests: XCTestCase {
 
         for _ in 0 ..< 100 {
             queue.async {
-                context.dispatch(LikeAction())
+                context.dispatch(.like)
             }
         }
 
@@ -54,8 +54,8 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testAsyncSequenceIngest() {
         var count = 0
         let expectation = XCTestExpectation()
-        let stream = AsyncStream<SetUserMutation> {
-            SetUserMutation(user: .main)
+        let stream = AsyncStream<Mutation<IdentityState, IdentityEnvironment>> {
+            .setUser(.main)
         }
         let context = Store()
         context.ingest(stream)
@@ -67,5 +67,19 @@ final class SwiftTinyReduxTests: XCTestCase {
 
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(count, 1)
+    }
+
+    func testAsyncSideEffectGroup() {
+        let context = Store()
+        let expectation = XCTestExpectation()
+        
+        context.willChange {
+            expectation.fulfill()
+        }
+        
+        context.dispatch(.parallelLogin)
+        
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(context.state.account, .member(User.main))
     }
 }

@@ -7,14 +7,14 @@
 
 import Foundation
 
-public protocol ActionProtocol: Equatable {
+public protocol ActionProtocol<S, E>: Equatable where S: Equatable {
     associatedtype S: Equatable
     associatedtype E
-    func perform(state: S) -> SideEffect<S, E>
+    func perform(state: S) -> any SideEffectProtocol<S, E>
 }
 
 public struct Action<S, E>: ActionProtocol where S: Equatable {
-    private let _perform: (S) -> SideEffect<S, E>
+    private let _perform: (S) -> any SideEffectProtocol<S, E>
     private let _base: AnyEquatable
 
     public init<A>(_ action: A) where A: ActionProtocol, A.S == S, A.E == E {
@@ -27,7 +27,7 @@ public struct Action<S, E>: ActionProtocol where S: Equatable {
         _perform = action.perform
     }
 
-    public init(_ perform: @escaping (S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
+    public init(_ perform: @escaping (S) -> any SideEffectProtocol<S, E>, id: String = #function, salt: Int = #line) {
         _base = AnyEquatable(id + String(salt))
         _perform = perform
     }
@@ -36,7 +36,7 @@ public struct Action<S, E>: ActionProtocol where S: Equatable {
         _base.base
     }
 
-    public func perform(state: S) -> SideEffect<S, E> {
+    public func perform(state: S) -> any SideEffectProtocol<S, E> {
         _perform(state)
     }
 }

@@ -8,11 +8,11 @@
 import Combine
 import Foundation
 
-public protocol SideEffectProtocol {
+public protocol SideEffectProtocol<S, E> where S: Equatable {
     associatedtype S: Equatable
     associatedtype E
 
-    func perform(env: E) async -> Mutation<S, E>
+    func perform(env: E) async -> any MutationProtocol<S, E>
     var isNoop: Bool { get }
 }
 
@@ -21,10 +21,10 @@ public extension SideEffectProtocol {
 }
 
 public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
-    private let _perform: (E) async -> Mutation<S, E>
+    private let _perform: (E) async -> any MutationProtocol<S, E>
     public let isNoop: Bool
 
-    public init(_ perform: @escaping (E) async -> Mutation<S, E>) {
+    public init(_ perform: @escaping (E) async -> any MutationProtocol<S, E>) {
         _perform = perform
         isNoop = false
     }
@@ -34,12 +34,12 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
         isNoop = false
     }
 
-    public init() {
+    fileprivate init() {
         _perform = { _ in fatalError() }
         isNoop = true
     }
 
-    public func perform(env: E) async -> Mutation<S, E> {
+    public func perform(env: E) async -> any MutationProtocol<S, E> {
         await _perform(env)
     }
 }
@@ -59,11 +59,13 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
         self.strategy = strategy
     }
 
-    public func perform(env _: E) async -> Mutation<S, E> {
-        .noop
+    public func perform(env _: E) async -> any MutationProtocol<S, E> {
+        fatalError()
     }
 }
 
 public extension SideEffect {
-    static var noop: SideEffect<S, E> { SideEffect() }
+    static var noop: SideEffect<S, E> {
+        SideEffect()
+    }
 }

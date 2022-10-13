@@ -7,10 +7,10 @@
 
 import Foundation
 
-public protocol MutationProtocol: Equatable {
+public protocol MutationProtocol<S, E>: Equatable where S: Equatable {
     associatedtype S: Equatable
     associatedtype E
-    func reduce(state: inout S) -> SideEffect<S, E>
+    func reduce(state: inout S) -> any SideEffectProtocol<S, E>
     var isNoop: Bool { get }
 }
 
@@ -19,7 +19,7 @@ public extension MutationProtocol {
 }
 
 public struct Mutation<S, E>: MutationProtocol where S: Equatable {
-    private let _reduce: (inout S) -> SideEffect<S, E>
+    private let _reduce: (inout S) -> any SideEffectProtocol<S, E>
     private let _base: AnyEquatable
     public let isNoop: Bool
 
@@ -37,13 +37,13 @@ public struct Mutation<S, E>: MutationProtocol where S: Equatable {
         isNoop = false
     }
 
-    public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {
+    public init(_ reduce: @escaping (inout S) -> any SideEffectProtocol<S, E>, id: String = #function, salt: Int = #line) {
         _base = AnyEquatable(id + String(salt))
         _reduce = reduce
         isNoop = false
     }
 
-    private init() {
+    fileprivate init() {
         _base = AnyEquatable(0)
         _reduce = { _ in fatalError() }
         isNoop = true
@@ -53,7 +53,7 @@ public struct Mutation<S, E>: MutationProtocol where S: Equatable {
         _base.base
     }
 
-    public func reduce(state: inout S) -> SideEffect<S, E> {
+    public func reduce(state: inout S) -> any SideEffectProtocol<S, E> {
         _reduce(&state)
     }
 }

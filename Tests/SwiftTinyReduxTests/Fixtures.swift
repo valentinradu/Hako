@@ -13,62 +13,63 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-typealias IdentitySideEffect = SideEffect<IdentityState, IdentityEnvironment>
-typealias IdentityMutation = Mutation<IdentityState, IdentityEnvironment>
-
-struct LoginMutation: MutationProtocol {
-    func reduce(state _: inout IdentityState) -> IdentitySideEffect {
-        SideEffect(LoginSideEffect())
-    }
-}
-
-struct LoginSideEffect: SideEffectProtocol {
-    func perform(env _: IdentityEnvironment) async -> IdentityMutation {
-        Mutation(SetUserMutation(user: .main))
-    }
-}
-
-struct LogoutMutation: MutationProtocol {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect {
-        state.account = .guest
-        return .noop
-    }
-}
-
-struct LogOutSideEffect: SideEffectProtocol {
-    func perform(env: IdentityEnvironment) async -> IdentityMutation {
-        await env.logout()
-        return .noop
-    }
-}
-
-struct SetUserMutation: MutationProtocol {
-    let user: User
-    func reduce(state: inout IdentityState) -> IdentitySideEffect {
-        state.account = .member(user)
-        return .noop
-    }
-}
-
-struct LikeAction: MutationProtocol {
-    func reduce(state: inout IdentityState) -> IdentitySideEffect {
-        switch state.account {
-        case .guest:
-            break
-        case var .member(user):
-            user.likes += 1
+extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnvironment> {
+    static func setUser(_ user: User) -> Mutation<S, E> {
+        Mutation { state in
             state.account = .member(user)
+            return SideEffect.noop
         }
-        return .noop
     }
-}
 
-struct ShowAlert: MutationProtocol {
-    let error: IdentityError
+    static var login: Mutation<S, E> {
+        Mutation { _ in
+            SideEffect { _ in
+                Mutation { state in
+                    state.account = .member(.main)
+                    return SideEffect.noop
+                }
+            }
+        }
+    }
 
-    func reduce(state: inout IdentityState) -> IdentitySideEffect {
-        state.errors.append(error)
-        return .noop
+    static var parallelLogin: Mutation<S, E> {
+        Mutation { _ in
+            SideEffectGroup(strategy: .concurrent, sideEffects: [
+                SideEffect<S, E> { _ in
+                    Mutation { state in
+                        state.account = .member(.main)
+                        return SideEffect.noop
+                    }
+                }
+            ])
+        }
+    }
+
+    static var logout: Mutation<S, E> {
+        Mutation { state in
+            state.account = .guest
+            return SideEffect.noop
+        }
+    }
+
+    static func showAlert(error: IdentityError) -> Mutation<S, E> {
+        Mutation { state in
+            state.errors.append(error)
+            return SideEffect.noop
+        }
+    }
+
+    static var like: Mutation<S, E> {
+        Mutation { state in
+            switch state.account {
+            case .guest:
+                break
+            case var .member(user):
+                user.likes += 1
+                state.account = .member(user)
+            }
+            return SideEffect.noop
+        }
     }
 }
 
