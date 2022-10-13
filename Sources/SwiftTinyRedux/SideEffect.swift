@@ -24,7 +24,7 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
     private let _perform: (E) async -> any MutationProtocol<S, E>
     public let isNoop: Bool
 
-    public init(_ perform: @escaping (E) async -> any MutationProtocol<S, E>) {
+    public init(_ perform: @escaping (E) async -> Mutation<S, E>) {
         _perform = perform
         isNoop = false
     }
