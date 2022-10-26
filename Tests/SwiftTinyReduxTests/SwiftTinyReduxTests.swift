@@ -12,14 +12,16 @@ import XCTest
 final class SwiftTinyReduxTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
-        context.willChange {}
+        context.willChange { _ in }
+        context.didChange { _ in }
         context.dispatch(.setUser(.main))
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
     func testPublishedState() async {
         let context = Store()
-        context.willChange {}
+        context.willChange { _ in }
+        context.didChange { _ in }
 
         context.dispatch(.setUser(.main))
         XCTAssertEqual(context.state.account, .member(User.main))
@@ -30,12 +32,13 @@ final class SwiftTinyReduxTests: XCTestCase {
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
         let expectation = XCTestExpectation()
         var likeCount = 0
-        context.willChange {
+        context.willChange { _ in
             likeCount += 1
             if likeCount == 100 {
                 expectation.fulfill()
             }
         }
+        context.didChange { _ in }
 
         for _ in 0 ..< 100 {
             queue.async {
@@ -53,10 +56,11 @@ final class SwiftTinyReduxTests: XCTestCase {
             .setUser(.main)
         }
         let context = Store()
-        context.willChange {
+        context.willChange { _ in
             count += 1
             expectation.fulfill()
         }
+        context.didChange { _ in }
         context.ingest(stream)
 
         wait(for: [expectation], timeout: 1)
@@ -66,13 +70,13 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testAsyncSideEffectGroup() {
         let context = Store()
         let expectation = XCTestExpectation()
-        
-        context.willChange {
+
+        context.willChange { _ in
             expectation.fulfill()
         }
-        
+        context.didChange { _ in }
         context.dispatch(.parallelLogin)
-        
+
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(context.state.account, .member(User.main))
     }

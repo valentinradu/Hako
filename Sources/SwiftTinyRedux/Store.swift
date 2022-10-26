@@ -8,9 +8,11 @@
 import Foundation
 
 public class Store<S, E> where S: Equatable {
+    public typealias StateChangeCallback = (S) -> Void
     private let _env: E
     private var _state: S
-    private var _willChange: (() -> Void)?
+    private var _willChange: StateChangeCallback?
+    private var _didChange: StateChangeCallback?
     private var _tasks: [UUID: Task<Void, Never>]
     private let _queue: DispatchQueue
 
@@ -39,8 +41,12 @@ public extension Store {
         _queue.sync { _env }
     }
 
-    func willChange(_ fn: @escaping () -> Void) {
+    func willChange(_ fn: @escaping StateChangeCallback) {
         _queue.sync(flags: .barrier) { _willChange = fn }
+    }
+
+    func didChange(_ fn: @escaping StateChangeCallback) {
+        _queue.sync(flags: .barrier) { _didChange = fn }
     }
 
     private var tasks: [UUID: Task<Void, Never>] {
@@ -54,8 +60,10 @@ public extension Store {
             let result = update(&state)
             if state != _state {
                 assert(_willChange != nil)
-                _willChange?()
+                assert(_didChange != nil)
+                _willChange?(_state)
                 _state = state
+                _didChange?(_state)
             }
             return result
         }
@@ -94,6 +102,7 @@ public extension Store {
 public extension Store {
     func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: ActionProtocol, SQ.Element.E == E, SQ.Element.S == S {
         assert(_willChange != nil)
+        assert(_didChange != nil)
         let uuid = UUID()
         let task = Task.detached { [weak self] in
             do {
@@ -110,6 +119,7 @@ public extension Store {
 
     func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: MutationProtocol, SQ.Element.E == E, SQ.Element.S == S {
         assert(_willChange != nil)
+        assert(_didChange != nil)
         let uuid = UUID()
         let task = Task { [weak self] in
             do {
