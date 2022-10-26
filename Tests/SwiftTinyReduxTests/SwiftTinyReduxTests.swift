@@ -19,14 +19,9 @@ final class SwiftTinyReduxTests: XCTestCase {
 
     func testPublishedState() async {
         let context = Store()
-        var wasCalledOnMainThread = false
-        context.willChange {
-            wasCalledOnMainThread = Thread.isMainThread
-        }
+        context.willChange {}
 
         context.dispatch(.setUser(.main))
-
-        XCTAssertTrue(wasCalledOnMainThread)
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
@@ -58,12 +53,11 @@ final class SwiftTinyReduxTests: XCTestCase {
             .setUser(.main)
         }
         let context = Store()
-        context.ingest(stream)
-
         context.willChange {
             count += 1
             expectation.fulfill()
         }
+        context.ingest(stream)
 
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(count, 1)

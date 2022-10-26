@@ -10,15 +10,16 @@ import Foundation
 public class Store<S, E> where S: Equatable {
     private let _env: E
     private var _state: S
-    private var _willChange: () -> Void
+    private var _willChange: (() -> Void)?
     private var _tasks: [UUID: Task<Void, Never>]
+    private let _queue: DispatchQueue
 
     public init(state: S,
                 env: E) {
         _env = env
         _state = state
         _tasks = [:]
-        _willChange = { assertionFailure() }
+        _queue = DispatchQueue(label: "com.tinyredux.store", attributes: .concurrent)
     }
 
     deinit {
@@ -30,42 +31,33 @@ public class Store<S, E> where S: Equatable {
 
 public extension Store {
     var state: S {
-        get { runOnMainThread { _state } }
+        get { _queue.sync { _state } }
         set { write { $0 = newValue } }
     }
 
     var env: E {
-        runOnMainThread { _env }
+        _queue.sync { _env }
     }
 
     func willChange(_ fn: @escaping () -> Void) {
-        runOnMainThread { _willChange = fn }
+        _queue.sync(flags: .barrier) { _willChange = fn }
     }
 
     private var tasks: [UUID: Task<Void, Never>] {
-        get { runOnMainThread { _tasks } }
-        set { runOnMainThread { _tasks = newValue } }
+        get { _queue.sync { _tasks } }
+        set { _queue.sync(flags: .barrier) { _tasks = newValue } }
     }
 
     private func write<R>(update: (inout S) -> R) -> R where S: Equatable {
-        runOnMainThread {
+        _queue.sync(flags: .barrier) {
             var state = _state
             let result = update(&state)
             if state != _state {
-                _willChange()
+                assert(_willChange != nil)
+                _willChange?()
                 _state = state
             }
             return result
-        }
-    }
-
-    private func runOnMainThread<R>(_ fn: () -> R) -> R {
-        if Thread.isMainThread {
-            return fn()
-        } else {
-            return DispatchQueue.main.sync {
-                fn()
-            }
         }
     }
 }
@@ -101,6 +93,7 @@ public extension Store {
 
 public extension Store {
     func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: ActionProtocol, SQ.Element.E == E, SQ.Element.S == S {
+        assert(_willChange != nil)
         let uuid = UUID()
         let task = Task.detached { [weak self] in
             do {
@@ -116,6 +109,7 @@ public extension Store {
     }
 
     func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: MutationProtocol, SQ.Element.E == E, SQ.Element.S == S {
+        assert(_willChange != nil)
         let uuid = UUID()
         let task = Task { [weak self] in
             do {
