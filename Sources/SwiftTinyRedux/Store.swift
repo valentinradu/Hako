@@ -5,48 +5,40 @@
 //  Created by Valentin Radu on 20/06/2022.
 //
 
+import Combine
 import Foundation
 
 public class Store<S, E> where S: Equatable {
-    public typealias StateChangeCallback = (S) -> Void
     private let _env: E
     private var _state: S
-    private var _willChange: StateChangeCallback?
-    private var _didChange: StateChangeCallback?
+    private let _didChangePublisher: PassthroughSubject<S, Never>
     private var _tasks: [UUID: Task<Void, Never>]
+    private var _cancellables: Set<AnyCancellable> = []
     private let _queue: DispatchQueue
 
     public init(state: S,
                 env: E) {
         _env = env
-        _state = state
         _tasks = [:]
+        _cancellables = []
+        _didChangePublisher = .init()
+        _state = state
         _queue = DispatchQueue(label: "com.tinyredux.store", attributes: .concurrent)
-    }
-
-    deinit {
-        _tasks.values.forEach {
-            $0.cancel()
-        }
     }
 }
 
 public extension Store {
     var state: S {
         get { _queue.sync { _state } }
-        set { write { $0 = newValue } }
+        set { write { _state = $0 } }
     }
 
     var env: E {
         _queue.sync { _env }
     }
 
-    func willChange(_ fn: @escaping StateChangeCallback) {
-        _queue.sync(flags: .barrier) { _willChange = fn }
-    }
-
-    func didChange(_ fn: @escaping StateChangeCallback) {
-        _queue.sync(flags: .barrier) { _didChange = fn }
+    var didChangePublisher: AnyPublisher<S, Never> {
+        _didChangePublisher.share().eraseToAnyPublisher()
     }
 
     private var tasks: [UUID: Task<Void, Never>] {
@@ -58,12 +50,9 @@ public extension Store {
         _queue.sync(flags: .barrier) {
             var state = _state
             let result = update(&state)
-            if state != _state {
-                assert(_willChange != nil)
-                assert(_didChange != nil)
-                _willChange?(_state)
+            if _state != state {
                 _state = state
-                _didChange?(_state)
+                _didChangePublisher.send(state)
             }
             return result
         }
@@ -100,38 +89,18 @@ public extension Store {
 }
 
 public extension Store {
-    func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: ActionProtocol, SQ.Element.E == E, SQ.Element.S == S {
-        assert(_willChange != nil)
-        assert(_didChange != nil)
-        let uuid = UUID()
-        let task = Task.detached { [weak self] in
-            do {
-                for try await value in sequence {
-                    self?.dispatch(value)
-                }
-            } catch {
-                assertionFailure()
-            }
-            self?.tasks.removeValue(forKey: uuid)
+    func ingest<A>(_ publisher: any Publisher<A, Never>) where A: ActionProtocol, A.E == E, A.S == S {
+        publisher.sink { [unowned self] in
+            dispatch($0)
         }
-        tasks[uuid] = task
+        .store(in: &_cancellables)
     }
 
-    func ingest<SQ>(_ sequence: SQ) where SQ: AsyncSequence, SQ.Element: MutationProtocol, SQ.Element.E == E, SQ.Element.S == S {
-        assert(_willChange != nil)
-        assert(_didChange != nil)
-        let uuid = UUID()
-        let task = Task { [weak self] in
-            do {
-                for try await value in sequence {
-                    self?.dispatch(value)
-                }
-            } catch {
-                assertionFailure()
-            }
-            self?.tasks.removeValue(forKey: uuid)
+    func ingest<M>(_ publisher: any Publisher<M, Never>) where M: MutationProtocol, M.E == E, M.S == S {
+        publisher.sink { [unowned self] in
+            dispatch($0)
         }
-        tasks[uuid] = task
+        .store(in: &_cancellables)
     }
 }
 

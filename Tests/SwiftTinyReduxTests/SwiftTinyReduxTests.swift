@@ -12,18 +12,22 @@ import XCTest
 final class SwiftTinyReduxTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
-        context.willChange { _ in }
-        context.didChange { _ in }
         context.dispatch(.setUser(.main))
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
     func testPublishedState() async {
+        let expectation = XCTestExpectation()
+        var cancellables: Set<AnyCancellable> = []
         let context = Store()
-        context.willChange { _ in }
-        context.didChange { _ in }
+        context.didChangePublisher
+            .sink { _ in
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
 
         context.dispatch(.setUser(.main))
+        wait(for: [expectation], timeout: 1)
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
@@ -31,14 +35,16 @@ final class SwiftTinyReduxTests: XCTestCase {
         let context = Store(state: .init(account: .member(.main), errors: []))
         let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
         let expectation = XCTestExpectation()
+        var cancellables: Set<AnyCancellable> = []
         var likeCount = 0
-        context.willChange { _ in
-            likeCount += 1
-            if likeCount == 100 {
-                expectation.fulfill()
+        context.didChangePublisher
+            .sink { _ in
+                likeCount += 1
+                if likeCount == 100 {
+                    expectation.fulfill()
+                }
             }
-        }
-        context.didChange { _ in }
+            .store(in: &cancellables)
 
         for _ in 0 ..< 100 {
             queue.async {
@@ -52,15 +58,16 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testAsyncSequenceIngest() {
         var count = 0
         let expectation = XCTestExpectation()
-        let stream = AsyncStream<Mutation<IdentityState, IdentityEnvironment>> {
-            .setUser(.main)
-        }
+        var cancellables: Set<AnyCancellable> = []
+        let stream: CurrentValueSubject<Mutation, Never> = .init(.setUser(.main))
         let context = Store()
-        context.willChange { _ in
-            count += 1
-            expectation.fulfill()
-        }
-        context.didChange { _ in }
+        context.didChangePublisher
+            .sink { _ in
+                count += 1
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
+
         context.ingest(stream)
 
         wait(for: [expectation], timeout: 1)
@@ -70,11 +77,13 @@ final class SwiftTinyReduxTests: XCTestCase {
     func testAsyncSideEffectGroup() {
         let context = Store()
         let expectation = XCTestExpectation()
+        var cancellables: Set<AnyCancellable> = []
 
-        context.willChange { _ in
-            expectation.fulfill()
-        }
-        context.didChange { _ in }
+        context.didChangePublisher
+            .sink { _ in
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
         context.dispatch(.parallelLogin)
 
         wait(for: [expectation], timeout: 1)
