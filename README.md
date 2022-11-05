@@ -1,7 +1,7 @@
 # Hako
 [箱 - hah-koo - box - 📦]
 
-(hako-banner)[artwork.png]
+![hako-banner](artwork.png)
 
 [![Swift](https://img.shields.io/badge/Swift-5.7-orange.svg?style=for-the-badge&logo=swift)](https://swift.org)
 [![Xcode](https://img.shields.io/badge/Xcode-14-blue.svg?style=for-the-badge&logo=Xcode&logoColor=white)](https://developer.apple.com/xcode)
