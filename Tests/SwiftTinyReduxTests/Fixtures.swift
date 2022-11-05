@@ -13,6 +13,19 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
+extension SideEffectProtocol where Self == SideEffect<IdentityState, IdentityEnvironment> {
+    static var parallelLogin: SideEffectGroup<S, E> {
+        SideEffectGroup(strategy: .concurrent, sideEffects: [
+            SideEffect<S, E> { _, _ in
+                Mutation { state in
+                    state.account = .member(.main)
+                    return .noop
+                }
+            }
+        ])
+    }
+}
+
 extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnvironment> {
     static func setUser(_ user: User) -> Mutation<S, E> {
         Mutation { state in
@@ -22,26 +35,9 @@ extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnviron
     }
 
     static var login: Mutation<S, E> {
-        Mutation { _ in
-            SideEffect { _ in
-                Mutation { state in
-                    state.account = .member(.main)
-                    return .noop
-                }
-            }
-        }
-    }
-
-    static var parallelLogin: Mutation<S, E> {
-        Mutation { _ in
-            SideEffectGroup(strategy: .concurrent, sideEffects: [
-                SideEffect<S, E> { _ in
-                    Mutation { state in
-                        state.account = .member(.main)
-                        return .noop
-                    }
-                }
-            ])
+        Mutation { state in
+            state.account = .member(.main)
+            return .noop
         }
     }
 

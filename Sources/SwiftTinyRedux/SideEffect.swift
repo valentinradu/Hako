@@ -12,35 +12,41 @@ public protocol SideEffectProtocol<S, E> where S: Equatable {
     associatedtype S: Equatable
     associatedtype E
 
-    func perform(env: E) async -> any MutationProtocol<S, E>
+    func perform(state: S, env: E) async -> Mutation<S, E>
     var isNoop: Bool { get }
 }
 
-public extension SideEffectProtocol {
-    var isNoop: Bool { false }
-}
-
 public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
-    private let _perform: (E) async -> any MutationProtocol<S, E>
-    public let isNoop: Bool
+    typealias Perform = (S, E) async -> any MutationProtocol<S, E>
+    private let _perform: Perform?
 
-    public init(_ perform: @escaping (E) async -> Mutation<S, E>) {
+    public init(_ perform: @escaping (S, E) async -> Mutation<S, E>) {
         _perform = perform
-        isNoop = false
     }
 
     public init<SE>(_ sideEffect: SE) where SE: SideEffectProtocol, SE.S == S, SE.E == E {
+        if let sameTypeSideEffect = sideEffect as? SideEffect {
+            self = sameTypeSideEffect
+            return
+        }
+
         _perform = sideEffect.perform
-        isNoop = false
     }
 
     fileprivate init() {
-        _perform = { _ in fatalError() }
-        isNoop = true
+        _perform = nil
     }
 
-    public func perform(env: E) async -> any MutationProtocol<S, E> {
-        await _perform(env)
+    public func perform(state: S, env: E) async -> Mutation<S, E> {
+        guard let perform = _perform else {
+            fatalError("Trying to perform a noop side effect")
+        }
+        guard !Task.isCancelled else { return .noop }
+        return await Mutation(perform(state, env))
+    }
+
+    public var isNoop: Bool {
+        _perform == nil
     }
 }
 
@@ -50,17 +56,21 @@ public enum SideEffectGroupStrategy {
 }
 
 public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
-    let sideEffects: [SideEffect<S, E>]
+    let sideEffects: [any SideEffectProtocol<S, E>]
     let strategy: SideEffectGroupStrategy
 
     public init(strategy: SideEffectGroupStrategy = .serial,
-                sideEffects: [SideEffect<S, E>]) {
+                sideEffects: [any SideEffectProtocol<S, E>]) {
         self.sideEffects = sideEffects
         self.strategy = strategy
     }
 
-    public func perform(env _: E) async -> any MutationProtocol<S, E> {
+    public func perform(state _: S, env _: E) async -> Mutation<S, E> {
         fatalError()
+    }
+
+    public var isNoop: Bool {
+        sideEffects.allSatisfy(\.isNoop)
     }
 }
 
