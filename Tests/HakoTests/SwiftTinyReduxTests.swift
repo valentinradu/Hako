@@ -1,16 +1,16 @@
 //
-//  SwiftTinyReduxTests.swift
+//  HakoTests.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.
 //
 
 import Combine
-@testable import SwiftTinyRedux
+@testable import Hako
 import XCTest
 
 @MainActor
-final class SwiftTinyReduxTests: XCTestCase {
+final class HakoTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
         context.dispatch(.setUser(.main))
