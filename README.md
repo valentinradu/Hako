@@ -1,5 +1,5 @@
 # Hako
-[箱 - hah-koo - box - 📦]
+<sub>[箱 - hah-koo - box - 📦]</sub>
 
 ![hako-banner](artwork.png)
 
