@@ -13,14 +13,63 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-enum IdentityAction: Action {
-    case login
-    case logout
-    case setUser(User)
-    case like
+extension SideEffectProtocol where Self == SideEffect<IdentityState, IdentityEnvironment> {
+    static var parallelLogin: SideEffectGroup<S, E> {
+        SideEffectGroup(strategy: .concurrent, sideEffects: [
+            SideEffect<S, E> { _, _ in
+                Mutation { state in
+                    state.account = .member(.main)
+                    return .noop
+                }
+            }
+        ])
+    }
 }
 
-enum IdentityState: Hashable {
+extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnvironment> {
+    static func setUser(_ user: User) -> Mutation<S, E> {
+        Mutation { state in
+            state.account = .member(user)
+            return .noop
+        }
+    }
+
+    static var login: Mutation<S, E> {
+        Mutation { state in
+            state.account = .member(.main)
+            return .noop
+        }
+    }
+
+    static var logout: Mutation<S, E> {
+        Mutation { state in
+            state.account = .guest
+            return .noop
+        }
+    }
+
+    static func showAlert(error: IdentityError) -> Mutation<S, E> {
+        Mutation { state in
+            state.errors.append(error)
+            return .noop
+        }
+    }
+
+    static var like: Mutation<S, E> {
+        Mutation { state in
+            switch state.account {
+            case .guest:
+                break
+            case var .member(user):
+                user.likes += 1
+                state.account = .member(user)
+            }
+            return .noop
+        }
+    }
+}
+
+enum Account: Equatable {
     case guest
     case member(User)
 
@@ -34,7 +83,19 @@ enum IdentityState: Hashable {
     }
 }
 
-struct User: Hashable {
+struct IdentityState: Equatable {
+    var account: Account
+    var errors: [IdentityError]
+}
+
+extension IdentityState {
+    init() {
+        account = .guest
+        errors = []
+    }
+}
+
+struct User: Equatable {
     static let main = User(name: "John",
                            email: "john@localhost.com",
                            likes: 0)
@@ -43,25 +104,11 @@ struct User: Hashable {
     var likes: Int
 }
 
-class ProfileViewModel: ObservableObject {
-    @Published var userEmail: String?
-    @Published var likes: Int?
-}
-
-class IdentityEnvironment {
+actor IdentityEnvironment {
     @Published var logoutCalled: Bool = false
     func logout() async {
         logoutCalled = true
     }
-}
-
-struct AppState {
-    var identity: IdentityState
-    var errors: [Error]
-}
-
-struct AppEnvironment {
-    let identity: IdentityEnvironment
 }
 
 extension Publisher {
@@ -71,37 +118,9 @@ extension Publisher {
     }
 }
 
-let identityReducer: Reducer<IdentityState, IdentityAction, IdentityEnvironment> = { state, action in
-    switch action {
-    case .login:
-        return { _, dispatch in
-            dispatch(IdentityAction.setUser(User.main))
-        }
-    case let .setUser(user):
-        state = .member(user)
-        return .none
-    case .logout:
-        state = .guest
-        return { env, _ in
-            await env.logout()
-        }
-    case .like:
-        switch state {
-        case .guest:
-            break
-        case var .member(user):
-            user.likes += 1
-            state = .member(user)
-        }
-        return .none
+extension Store {
+    convenience init(state: IdentityState = .init()) where S == IdentityState, E == IdentityEnvironment {
+        self.init(state: state,
+                  env: .init())
     }
-}
-
-let errorReducer: Reducer<AppState, StoreAction, AppEnvironment> = { state, action in
-    switch action {
-    case let .error(error):
-        state.errors.append(error)
-    }
-
-    return .none
 }

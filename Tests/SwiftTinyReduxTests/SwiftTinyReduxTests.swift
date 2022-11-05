@@ -5,114 +5,55 @@
 //  Created by Valentin Radu on 22/05/2022.
 //
 
-@testable @_spi(testable) import SwiftTinyRedux
+import Combine
+@testable import SwiftTinyRedux
 import XCTest
 
+@MainActor
 final class SwiftTinyReduxTests: XCTestCase {
-    private var _store: Store<AppState, AppEnvironment>!
-
-    override func setUp() {
-        let state: AppState = .init(identity: .guest, errors: [])
-        let env: AppEnvironment = .init(identity: .init())
-        _store = Store(initialState: state,
-                       environment: env)
-        _store.add(reducer: identityReducer,
-                   state: \.identity,
-                   environment: \.identity)
-        _store.add(reducer: errorReducer)
-    }
-
     func testSimpleDispatch() {
-        let sideEffects = _store._dispatch(action: IdentityAction.setUser(User.main))
-        let state = _store.state
-        XCTAssertEqual(sideEffects.count, 0)
-        XCTAssertEqual(state.identity, .member(User.main))
+        let context = Store()
+        context.dispatch(.setUser(.main))
+        XCTAssertEqual(context.state.account, .member(User.main))
     }
 
-    func testThrowDispatch() async {
-        let sideEffect: SideEffect<AppEnvironment> = { _, _ in
-            throw IdentityError.unauthenticated
-        }
-        await _store._perform(sideEffects: [sideEffect])
+    func testPublishedState() async {
+        let expectation = XCTestExpectation()
+        var cancellables: Set<AnyCancellable> = []
+        let context = Store()
+        context.objectWillChange
+            .sink { _ in
+                expectation.fulfill()
+            }
+            .store(in: &cancellables)
 
-        let state = _store.state
-        XCTAssertEqual(state.errors.compactMap { $0 as? IdentityError },
-                       [IdentityError.unauthenticated])
+        context.dispatch(.setUser(.main))
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(context.state.account, .member(User.main))
     }
 
-    func testMappingInitialState() async throws {
-        let vm = ProfileViewModel()
-        _ = _store._dispatch(action: IdentityAction.setUser(User.main))
-
-        _store
-            .watch(\.identity.member?.email)
-            .assign(to: &vm.$userEmail)
-
-        for try await value in vm.$userEmail.timeout(1).asyncStream() {
-            if value == User.main.email {
-                return
+    func testAsyncSequenceIngest() {
+        var count = 0
+        let expectation = XCTestExpectation()
+        var cancellables: Set<AnyCancellable> = []
+        let stream: CurrentValueSubject<Mutation, Never> = .init(.setUser(.main))
+        let context = Store()
+        context.objectWillChange
+            .sink { _ in
+                count += 1
+                expectation.fulfill()
             }
-        }
+            .store(in: &cancellables)
 
-        XCTFail()
+        context.ingest(stream)
+
+        wait(for: [expectation], timeout: 1)
+        XCTAssertEqual(count, 1)
     }
 
-    func testMapping() async throws {
-        let vm = ProfileViewModel()
-
-        _store
-            .watch(\.identity.member?.email)
-            .assign(to: &vm.$userEmail)
-        let sideEffects = _store._dispatch(action: IdentityAction.setUser(User.main))
-
-        XCTAssertEqual(sideEffects.count, 0)
-        for try await value in vm.$userEmail.timeout(1).asyncStream() {
-            if value == User.main.email {
-                return
-            }
-        }
-
-        XCTFail()
-    }
-
-    func testPerformSideEffects() async throws {
-        let sideEffects = _store._dispatch(action: IdentityAction.logout)
-        await _store._perform(sideEffects: sideEffects)
-
-        XCTAssertEqual(sideEffects.count, 1)
-        let environment = _store.environment
-
-        for try await value in environment.identity.$logoutCalled.timeout(1).asyncStream() {
-            if value {
-                return
-            }
-        }
-
-        XCTFail()
-    }
-
-    func testMultithreadDispatch() async throws {
-        let vm = ProfileViewModel()
-        let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
-
-        _store
-            .watch(\.identity.member?.likes)
-            .assign(to: &vm.$likes)
-
-        _ = _store._dispatch(action: IdentityAction.setUser(User.main))
-
-        for _ in 0 ..< 100 {
-            queue.async { [unowned self] in
-                _ = _store._dispatch(action: IdentityAction.like)
-            }
-        }
-
-        for try await value in vm.$likes.timeout(1).asyncStream() {
-            if value == 100 {
-                return
-            }
-        }
-
-        XCTFail()
+    func testAsyncSideEffectGroup() async {
+        let context = Store()
+        await context.perform(.parallelLogin)
+        XCTAssertEqual(context.state.account, .member(User.main))
     }
 }

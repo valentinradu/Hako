@@ -1,4 +1,4 @@
-// swift-tools-version: 5.6
+// swift-tools-version: 5.7
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -6,14 +6,15 @@ import PackageDescription
 let package = Package(
     name: "SwiftTinyRedux",
     platforms: [
-        .iOS(.v14), .macOS(.v11), .tvOS(.v9),
-        .macCatalyst(.v13), .watchOS(.v2)
+        .iOS(.v16), .macOS(.v12), .tvOS(.v11),
+        .macCatalyst(.v13), .watchOS(.v4),
     ],
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
             name: "SwiftTinyRedux",
-            targets: ["SwiftTinyRedux"]),
+            targets: ["SwiftTinyRedux"]
+        ),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -24,9 +25,11 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "SwiftTinyRedux",
-            dependencies: []),
+            dependencies: []
+        ),
         .testTarget(
             name: "SwiftTinyReduxTests",
-            dependencies: ["SwiftTinyRedux"]),
+            dependencies: ["SwiftTinyRedux"]
+        ),
     ]
 )
