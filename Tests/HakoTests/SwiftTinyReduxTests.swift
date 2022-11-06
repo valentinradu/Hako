@@ -21,7 +21,7 @@ final class HakoTests: XCTestCase {
         let expectation = XCTestExpectation()
         var cancellables: Set<AnyCancellable> = []
         let context = Store()
-        context.objectWillChange
+        context.state.objectWillChange
             .sink { _ in
                 expectation.fulfill()
             }
@@ -38,7 +38,7 @@ final class HakoTests: XCTestCase {
         var cancellables: Set<AnyCancellable> = []
         let stream: CurrentValueSubject<Mutation, Never> = .init(.setUser(.main))
         let context = Store()
-        context.objectWillChange
+        context.state.objectWillChange
             .sink { _ in
                 count += 1
                 expectation.fulfill()

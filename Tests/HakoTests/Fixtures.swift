@@ -83,15 +83,18 @@ enum Account: Equatable {
     }
 }
 
-struct IdentityState: Equatable {
-    var account: Account
-    var errors: [IdentityError]
-}
+class IdentityState: Equatable, ObservableObject {
+    @Published var account: Account
+    @Published var errors: [IdentityError]
 
-extension IdentityState {
     init() {
         account = .guest
         errors = []
+    }
+
+    static func == (lhs: IdentityState, rhs: IdentityState) -> Bool {
+        lhs.account == rhs.account
+            && lhs.errors == rhs.errors
     }
 }
 

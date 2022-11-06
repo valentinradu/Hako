@@ -9,7 +9,7 @@ import Combine
 import Foundation
 
 @MainActor
-public class Store<S, E>: ObservableObject where S: Equatable {
+public class Store<S, E> where S: Equatable {
     @Published private var _state: S
     private let _env: E
     private var _tasks: [UUID: Task<Void, Never>]

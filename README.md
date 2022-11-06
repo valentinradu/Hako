@@ -21,4 +21,5 @@ Although heavily opinionated on how state should be managed in an UI-centric app
 Beyond being simple, a solid architecture should allow the overlying codebase to be easily tested.  
 
 ### Ergonomics and a developer-first approach
-As developers, we're spending much more time reading code than writing code. Hako attempts to make state management a pleasure to read, follow and understand. 
+As developers, we're spending much more time reading code than writing code and Hako attempts to make state management a pleasure to read, follow and understand. On top of that, a lot of attention went into making sure Hako integrates seamless with the tools and tecniques normally used in SwiftUI. 
+
