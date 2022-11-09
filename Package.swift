@@ -4,7 +4,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "SwiftTinyRedux",
+    name: "Hako",
     platforms: [
         .iOS(.v16), .macOS(.v12), .tvOS(.v11),
         .macCatalyst(.v13), .watchOS(.v4),
@@ -12,8 +12,8 @@ let package = Package(
     products: [
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
-            name: "SwiftTinyRedux",
-            targets: ["SwiftTinyRedux"]
+            name: "Hako",
+            targets: ["Hako"]
         ),
     ],
     dependencies: [
@@ -24,12 +24,12 @@ let package = Package(
         // Targets are the basic building blocks of a package. A target can define a module or a test suite.
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
-            name: "SwiftTinyRedux",
+            name: "Hako",
             dependencies: []
         ),
         .testTarget(
-            name: "SwiftTinyReduxTests",
-            dependencies: ["SwiftTinyRedux"]
+            name: "HakoTests",
+            dependencies: ["Hako"]
         ),
     ]
 )

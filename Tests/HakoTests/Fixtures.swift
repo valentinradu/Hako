@@ -7,7 +7,7 @@
 
 import Combine
 import Foundation
-import SwiftTinyRedux
+import Hako
 
 enum IdentityError: Error {
     case unauthenticated
