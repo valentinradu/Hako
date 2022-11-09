@@ -102,7 +102,7 @@ public extension Store {
                 }
             }
         default:
-            let nextMut = await sideEffect.perform(state: _state, env: _env)
+            let nextMut = await sideEffect.perform(env: _env)
             await dispatch(nextMut)
         }
     }

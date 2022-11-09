@@ -12,15 +12,15 @@ public protocol SideEffectProtocol<S, E> where S: Equatable {
     associatedtype S: Equatable
     associatedtype E
 
-    func perform(state: S, env: E) async -> Mutation<S, E>
+    func perform(env: E) async -> Mutation<S, E>
     var isNoop: Bool { get }
 }
 
 public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
-    typealias Perform = (S, E) async -> any MutationProtocol<S, E>
+    typealias Perform = (E) async -> any MutationProtocol<S, E>
     private let _perform: Perform?
 
-    public init(_ perform: @escaping (S, E) async -> Mutation<S, E>) {
+    public init(_ perform: @escaping (E) async -> Mutation<S, E>) {
         _perform = perform
     }
 
@@ -37,12 +37,12 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
         _perform = nil
     }
 
-    public func perform(state: S, env: E) async -> Mutation<S, E> {
+    public func perform(env: E) async -> Mutation<S, E> {
         guard let perform = _perform else {
             fatalError("Trying to perform a noop side effect")
         }
         guard !Task.isCancelled else { return .noop }
-        return await Mutation(perform(state, env))
+        return await Mutation(perform(env))
     }
 
     public var isNoop: Bool {
@@ -65,7 +65,7 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
         self.strategy = strategy
     }
 
-    public func perform(state _: S, env _: E) async -> Mutation<S, E> {
+    public func perform(env _: E) async -> Mutation<S, E> {
         fatalError()
     }
 

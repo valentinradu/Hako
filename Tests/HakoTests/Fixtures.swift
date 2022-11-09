@@ -16,7 +16,7 @@ enum IdentityError: Error {
 extension SideEffectProtocol where Self == SideEffect<IdentityState, IdentityEnvironment> {
     static var parallelLogin: SideEffectGroup<S, E> {
         SideEffectGroup(strategy: .concurrent, sideEffects: [
-            SideEffect<S, E> { _, _ in
+            SideEffect<S, E> { _ in
                 Mutation { state in
                     state.account = .member(.main)
                     return .noop
