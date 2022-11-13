@@ -9,15 +9,12 @@ import Combine
 import Foundation
 
 @MainActor
-public class Store<S, E>: ObservableObject where S: Equatable {
+public class Store<S>: ObservableObject where S: Equatable {
     @Published private var _state: S
-    private let _env: E
     private var _tasks: [UUID: Task<Void, Never>]
     private var _cancellables: Set<AnyCancellable>
 
-    public init(state: S,
-                env: E) {
-        _env = env
+    public init(state: S) {
         _tasks = [:]
         _state = state
         _cancellables = []
@@ -34,38 +31,12 @@ public extension Store {
     var state: S {
         _state
     }
-
-    var env: E {
-        _env
-    }
-
-    private func removeTask(uuid: UUID) {
-        _tasks.removeValue(forKey: uuid)
-    }
 }
 
-public extension Store {
-    func dispatch<M>(_ mutation: M) where M: MutationProtocol, M.S == S, M.E == E {
-        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
-
-        guard !mutation.isNoop else {
-            return
-        }
-
-        let sideEffect = mutation.reduce(state: &_state)
-
-        let uuid = UUID()
-        let task = Task.detached { [weak self] in
-            guard let self = self else { return }
-            await self.perform(sideEffect)
-            await self.removeTask(uuid: uuid)
-        }
-        _tasks[uuid] = task
-    }
-}
+// MARK: Ingesting commands
 
 public extension Store {
-    func ingest<M>(_ publisher: any Publisher<M, Never>) where M: MutationProtocol, M.E == E, M.S == S {
+    func ingest(_ publisher: any Publisher<Command<S>, Never>) {
         precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
 
         publisher.sink { [weak self] in
@@ -77,33 +48,88 @@ public extension Store {
 }
 
 public extension Store {
-    nonisolated func perform<SE>(_ sideEffect: SE) async where SE: SideEffectProtocol, SE.S == S, SE.E == E {
-        guard !sideEffect.isNoop else {
-            return
-        }
-
-        switch sideEffect {
-        case let groupSideEffect as SideEffectGroup<S, E>:
-            switch groupSideEffect.strategy {
-            case .serial:
-                for sideEffect in groupSideEffect.sideEffects {
-                    await perform(sideEffect)
-                }
-            case .concurrent:
-                await withTaskGroup(of: Void.self) { [weak self] group in
-                    for sideEffect in groupSideEffect.sideEffects {
-                        group.addTask { [weak self] in
-                            guard let self = self else { return }
-                            await self.perform(sideEffect)
-                        }
-                    }
-
-                    await group.waitForAll()
-                }
+    func dispatch(_ command: Command<S>) {
+        switch command {
+        case .noop:
+            break
+        case let .perform(sideEffect):
+            withManagedTask { [weak self] in
+                guard let self = self else { return }
+                await self.perform(sideEffect)
             }
-        default:
-            let nextMut = await sideEffect.perform(env: _env)
-            await dispatch(nextMut)
+        case let .performMany(strategy, sideEffects):
+            withManagedTask { [weak self] in
+                guard let self = self else { return }
+                await self.perform(strategy: strategy, sideEffects: sideEffects)
+            }
+        case let .reduce(mutation):
+            reduce(mutation)
+        case let .reduceMany(mutations):
+            reduce(mutations)
         }
+    }
+}
+
+// MARK: Dispatching actions
+
+private extension Store {
+    func reduce(_ mutation: any Mutation<S>) {
+        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
+
+        let command = mutation.reduce(state: &_state)
+        dispatch(command)
+    }
+
+    func reduce(_ mutations: [any Mutation<S>]) {
+        for mutation in mutations {
+            reduce(mutation)
+        }
+    }
+}
+
+// MARK: Performing side effects
+
+private extension Store {
+    nonisolated func perform(_ sideEffect: any SideEffect<S>) async {
+        let command = await sideEffect.perform()
+        await dispatch(command)
+    }
+
+    nonisolated func perform(strategy: PerformManyStrategy, sideEffects: [any SideEffect<S>]) async {
+        switch strategy {
+        case .serial:
+            for sideEffect in sideEffects {
+                await perform(sideEffect)
+            }
+        case .concurrent:
+            await withTaskGroup(of: Void.self) { [weak self] group in
+                for sideEffect in sideEffects {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        await self.perform(sideEffect)
+                    }
+                }
+
+                await group.waitForAll()
+            }
+        }
+    }
+}
+
+// MARK: Other utils
+
+private extension Store {
+    func removeTask(uuid: UUID) {
+        _tasks.removeValue(forKey: uuid)
+    }
+
+    func withManagedTask(_ run: @escaping () async -> Void) {
+        let uuid = UUID()
+        let task = Task.detached { [weak self] in
+            guard let self = self else { return }
+            await run()
+            await self.removeTask(uuid: uuid)
+        }
+        _tasks[uuid] = task
     }
 }

@@ -13,7 +13,7 @@ import XCTest
 final class HakoTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
-        context.dispatch(.setUser(.main))
+        context.dispatch(.login)
         XCTAssertEqual(context.state.account, .member(User.main))
     }
 
@@ -27,7 +27,7 @@ final class HakoTests: XCTestCase {
             }
             .store(in: &cancellables)
 
-        context.dispatch(.setUser(.main))
+        context.dispatch(.login)
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(context.state.account, .member(User.main))
     }
@@ -36,7 +36,7 @@ final class HakoTests: XCTestCase {
         var count = 0
         let expectation = XCTestExpectation()
         var cancellables: Set<AnyCancellable> = []
-        let stream: CurrentValueSubject<Mutation, Never> = .init(.setUser(.main))
+        let stream: CurrentValueSubject<IdentityCommand, Never> = .init(.like)
         let context = Store()
         context.objectWillChange
             .sink { _ in
@@ -51,9 +51,24 @@ final class HakoTests: XCTestCase {
         XCTAssertEqual(count, 1)
     }
 
-    func testAsyncSideEffectGroup() async {
-        let context = Store()
-        await context.perform(.parallelLogin)
-        XCTAssertEqual(context.state.account, .member(User.main))
+    func testConcurrentUpdates() {
+        let expectation = XCTestExpectation()
+        let state = IdentityState(account: .member(.main), errors: [])
+        let context = Store(state: state)
+
+        for _ in 0 ..< 1000 {
+            Task.detached {
+                await context.dispatch(.like)
+                guard let member = await context.state.account.member else {
+                    assertionFailure()
+                    return
+                }
+                if member.likes == 1000 {
+                    expectation.fulfill()
+                }
+            }
+        }
+
+        wait(for: [expectation], timeout: 3)
     }
 }

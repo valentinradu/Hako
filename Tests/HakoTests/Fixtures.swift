@@ -13,61 +13,65 @@ enum IdentityError: Error {
     case unauthenticated
 }
 
-extension SideEffectProtocol where Self == SideEffect<IdentityState, IdentityEnvironment> {
-    static var parallelLogin: SideEffectGroup<S, E> {
-        SideEffectGroup(strategy: .concurrent, sideEffects: [
-            SideEffect<S, E> { _ in
-                Mutation { state in
-                    state.account = .member(.main)
-                    return .noop
-                }
-            }
-        ])
+typealias IdentityCommand = Command<IdentityState>
+
+// MARK: Update account mutation
+
+struct UpdateAccountMutation: Mutation {
+    let account: Account
+    func reduce(state: inout IdentityState) -> IdentityCommand {
+        state.account = account
+        return .noop
     }
 }
 
-extension MutationProtocol where Self == Mutation<IdentityState, IdentityEnvironment> {
-    static func setUser(_ user: User) -> Mutation<S, E> {
-        Mutation { state in
+// MARK: Update errors mutation
+
+struct UpdateErrorsMutation: Mutation {
+    let errors: [IdentityError]
+    func reduce(state: inout IdentityState) -> IdentityCommand {
+        state.errors.append(contentsOf: errors)
+        return .noop
+    }
+}
+
+// MARK: Update likes mutation
+
+struct UpdateLikesMutation: Mutation {
+    let units: Int
+    func reduce(state: inout IdentityState) -> IdentityCommand {
+        switch state.account {
+        case .guest:
+            break
+        case var .member(user):
+            user.likes += units
             state.account = .member(user)
-            return .noop
         }
-    }
-
-    static var login: Mutation<S, E> {
-        Mutation { state in
-            state.account = .member(.main)
-            return .noop
-        }
-    }
-
-    static var logout: Mutation<S, E> {
-        Mutation { state in
-            state.account = .guest
-            return .noop
-        }
-    }
-
-    static func showAlert(error: IdentityError) -> Mutation<S, E> {
-        Mutation { state in
-            state.errors.append(error)
-            return .noop
-        }
-    }
-
-    static var like: Mutation<S, E> {
-        Mutation { state in
-            switch state.account {
-            case .guest:
-                break
-            case var .member(user):
-                user.likes += 1
-                state.account = .member(user)
-            }
-            return .noop
-        }
+        return .noop
     }
 }
+
+// MARK: Commands
+
+extension IdentityCommand {
+    static var login: IdentityCommand {
+        .reduce(UpdateAccountMutation(account: .member(.main)))
+    }
+
+    static var logout: IdentityCommand {
+        .reduce(UpdateAccountMutation(account: .guest))
+    }
+
+    static func showAlert(error: IdentityError) -> IdentityCommand {
+        .reduce(UpdateErrorsMutation(errors: [error]))
+    }
+
+    static var like: IdentityCommand {
+        .reduce(UpdateLikesMutation(units: 1))
+    }
+}
+
+// MARK: State
 
 enum Account: Equatable {
     case guest
@@ -95,6 +99,12 @@ extension IdentityState {
     }
 }
 
+extension Store where S == IdentityState {
+    convenience init() {
+        self.init(state: .init())
+    }
+}
+
 struct User: Equatable {
     static let main = User(name: "John",
                            email: "john@localhost.com",
@@ -104,23 +114,9 @@ struct User: Equatable {
     var likes: Int
 }
 
-actor IdentityEnvironment {
-    @Published var logoutCalled: Bool = false
-    func logout() async {
-        logoutCalled = true
-    }
-}
-
 extension Publisher {
     func timeout(_ value: TimeInterval) -> Publishers.Timeout<Self, RunLoop> {
         timeout(RunLoop.SchedulerTimeType.Stride(value),
                 scheduler: RunLoop.main)
-    }
-}
-
-extension Store {
-    convenience init(state: IdentityState = .init()) where S == IdentityState, E == IdentityEnvironment {
-        self.init(state: state,
-                  env: .init())
     }
 }
