@@ -17,15 +17,14 @@ public protocol SideEffect<S> where S: Equatable {
     func perform() async -> Command<S>
 }
 
-public enum Command<S> where S: Equatable {
+public indirect enum Command<S> where S: Equatable {
     case noop
     case perform(any SideEffect<S>)
-    case performMany(strategy: PerformManyStrategy, sideEffects: [any SideEffect<S>])
     case reduce(any Mutation<S>)
-    case reduceMany([any Mutation<S>])
+    case dispatch(strategy: DispatchStrategy, commands: [Command<S>])
 }
 
-public enum PerformManyStrategy {
+public enum DispatchStrategy {
     case serial
     case concurrent
 }

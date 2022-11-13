@@ -57,15 +57,33 @@ public extension Store {
                 guard let self = self else { return }
                 await self.perform(sideEffect)
             }
-        case let .performMany(strategy, sideEffects):
+        case let .dispatch(strategy, commands):
             withManagedTask { [weak self] in
                 guard let self = self else { return }
-                await self.perform(strategy: strategy, sideEffects: sideEffects)
+                await self.dispatch(commands, strategy: strategy)
             }
         case let .reduce(mutation):
             reduce(mutation)
-        case let .reduceMany(mutations):
-            reduce(mutations)
+        }
+    }
+
+    func dispatch(_ commands: [Command<S>], strategy: DispatchStrategy) async {
+        switch strategy {
+        case .serial:
+            for command in commands {
+                dispatch(command)
+            }
+        case .concurrent:
+            await withTaskGroup(of: Void.self) { [weak self] group in
+                for command in commands {
+                    group.addTask { [weak self] in
+                        guard let self = self else { return }
+                        await self.dispatch(command)
+                    }
+                }
+
+                await group.waitForAll()
+            }
         }
     }
 }
@@ -79,12 +97,6 @@ private extension Store {
         let command = mutation.reduce(state: &_state)
         dispatch(command)
     }
-
-    func reduce(_ mutations: [any Mutation<S>]) {
-        for mutation in mutations {
-            reduce(mutation)
-        }
-    }
 }
 
 // MARK: Performing side effects
@@ -93,26 +105,6 @@ private extension Store {
     nonisolated func perform(_ sideEffect: any SideEffect<S>) async {
         let command = await sideEffect.perform()
         await dispatch(command)
-    }
-
-    nonisolated func perform(strategy: PerformManyStrategy, sideEffects: [any SideEffect<S>]) async {
-        switch strategy {
-        case .serial:
-            for sideEffect in sideEffects {
-                await perform(sideEffect)
-            }
-        case .concurrent:
-            await withTaskGroup(of: Void.self) { [weak self] group in
-                for sideEffect in sideEffects {
-                    group.addTask { [weak self] in
-                        guard let self = self else { return }
-                        await self.perform(sideEffect)
-                    }
-                }
-
-                await group.waitForAll()
-            }
-        }
     }
 }
 
