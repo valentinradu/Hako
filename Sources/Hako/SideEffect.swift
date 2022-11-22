@@ -1,5 +1,5 @@
 //
-//  SwiftTinyRedux.swift
+//  Hako.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.

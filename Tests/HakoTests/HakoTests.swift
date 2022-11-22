@@ -1,15 +1,15 @@
 //
-//  SwiftTinyReduxTests.swift
+//  HakoTests.swift
 //
 //
 //  Created by Valentin Radu on 22/05/2022.
 //
 
 import Combine
-@testable import SwiftTinyRedux
+@testable import Hako
 import XCTest
 
-final class SwiftTinyReduxTests: XCTestCase {
+final class HakoTests: XCTestCase {
     func testSimpleDispatch() {
         let context = Store()
         context.dispatch(.setUser(.main))
@@ -33,7 +33,7 @@ final class SwiftTinyReduxTests: XCTestCase {
 
     func testMultithreadDispatch() async {
         let context = Store(state: .init(account: .member(.main), errors: []))
-        let queue = DispatchQueue(label: "com.swifttinyredux.test", attributes: .concurrent)
+        let queue = DispatchQueue(label: "com.hako.test", attributes: .concurrent)
         let expectation = XCTestExpectation()
         var cancellables: Set<AnyCancellable> = []
         var likeCount = 0
