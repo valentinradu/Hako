@@ -50,8 +50,8 @@ public enum SideEffectGroupStrategy {
 }
 
 public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
-    let sideEffects: [SideEffect<S, E>]
-    let strategy: SideEffectGroupStrategy
+    private(set) var sideEffects: [SideEffect<S, E>]
+    private(set) var strategy: SideEffectGroupStrategy
 
     public init(strategy: SideEffectGroupStrategy = .serial,
                 sideEffects: [SideEffect<S, E>]) {
@@ -61,6 +61,13 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
 
     public func perform(env _: E) async -> any MutationProtocol<S, E> {
         fatalError()
+    }
+
+    public mutating func merge(_ other: SideEffectGroup<S, E>) {
+        sideEffects += other.sideEffects
+        if other.strategy == .concurrent {
+            strategy = .concurrent
+        }
     }
 }
 
