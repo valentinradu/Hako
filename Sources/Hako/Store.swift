@@ -104,7 +104,7 @@ public extension Store {
     }
 }
 
-extension Store {
+public extension Store {
     func perform<SE>(_ sideEffect: SE) async where SE: SideEffectProtocol, SE.S == S, SE.E == E {
         guard !sideEffect.isNoop else {
             return
