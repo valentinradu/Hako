@@ -109,29 +109,7 @@ public extension Store {
         guard !sideEffect.isNoop else {
             return
         }
-        switch sideEffect {
-        case let groupSideEffect as SideEffectGroup<S, E>:
-            switch groupSideEffect.strategy {
-            case .serial:
-                for sideEffect in groupSideEffect.sideEffects {
-                    await perform(sideEffect)
-                }
-                dispatch(groupSideEffect.mutation)
-            case .concurrent:
-                await withTaskGroup(of: Void.self) { group in
-                    for sideEffect in groupSideEffect.sideEffects {
-                        group.addTask { [weak self] in
-                            await self?.perform(sideEffect)
-                        }
-                    }
-
-                    await group.waitForAll()
-                    dispatch(groupSideEffect.mutation)
-                }
-            }
-        default:
-            let nextMut = await sideEffect.perform(env: env)
-            dispatch(nextMut)
-        }
+        let nextMut = await sideEffect.perform(env: env)
+        dispatch(nextMut)
     }
 }

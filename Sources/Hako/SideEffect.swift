@@ -69,8 +69,56 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
         self.mutation = mutation
     }
 
-    public func perform(env _: E) async -> any MutationProtocol<S, E> {
-        fatalError()
+    public func perform(env: E) async -> any MutationProtocol<S, E> {
+        switch strategy {
+        case .serial:
+            var mutations: [Mutation<S, E>] = []
+            for sideEffect in sideEffects {
+                if !sideEffect.isNoop {
+                    await mutations.append(Mutation(sideEffect.perform(env: env)))
+                }
+            }
+            mutations.append(mutation)
+            return Mutation { state in
+                var sideEffects: [SideEffect<S, E>] = []
+                for mutation in mutations {
+                    if !mutation.isNoop {
+                        sideEffects.append(SideEffect(mutation.reduce(state: &state)))
+                    }
+                }
+
+                return SideEffectGroup(strategy: strategy, sideEffects: sideEffects)
+            }
+        case .concurrent:
+            var mutations = await withTaskGroup(of: Mutation<S, E>.self, returning: [Mutation<S, E>].self) { group in
+                for sideEffect in sideEffects {
+                    if !sideEffect.isNoop {
+                        group.addTask {
+                            Mutation(await sideEffect.perform(env: env))
+                        }
+                    }
+                }
+
+                var mutations: [Mutation<S, E>] = []
+                while let mutation = await group.next() {
+                    mutations.append(mutation)
+                }
+
+                return mutations
+            }
+            mutations.append(mutation)
+
+            return Mutation { state in
+                var sideEffects: [SideEffect<S, E>] = []
+                for mutation in mutations {
+                    if !mutation.isNoop {
+                        sideEffects.append(SideEffect(mutation.reduce(state: &state)))
+                    }
+                }
+
+                return SideEffectGroup(strategy: strategy, sideEffects: sideEffects)
+            }
+        }
     }
 
     public mutating func merge(_ other: SideEffectGroup<S, E>) {
