@@ -82,15 +82,17 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
         let oldMutation = mutation
         let commonStrategy = strategy
         mutation = Mutation { state in
-            let firstSideEffect = oldMutation.reduce(state: &state)
-            let secondSideEffect = other.mutation.reduce(state: &state)
-            return SideEffectGroup(
-                strategy: commonStrategy,
-                sideEffects: [
-                    SideEffect(firstSideEffect),
-                    SideEffect(secondSideEffect),
-                ]
-            )
+            var sideEffects: [SideEffect<S, E>] = []
+
+            if !oldMutation.isNoop {
+                sideEffects.append(SideEffect(oldMutation.reduce(state: &state)))
+            }
+
+            if !other.mutation.isNoop {
+                sideEffects.append(SideEffect(other.mutation.reduce(state: &state)))
+            }
+
+            return SideEffectGroup(strategy: commonStrategy, sideEffects: sideEffects)
         }
     }
 }
