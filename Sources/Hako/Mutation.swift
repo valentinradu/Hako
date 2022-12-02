@@ -34,7 +34,7 @@ public struct Mutation<S, E>: MutationProtocol where S: Equatable {
             let sideEffect = mut.reduce(state: &state)
             return sideEffect
         }
-        isNoop = false
+        isNoop = mut.isNoop
     }
 
     public init(_ reduce: @escaping (inout S) -> SideEffect<S, E>, id: String = #function, salt: Int = #line) {

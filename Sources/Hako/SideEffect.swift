@@ -31,7 +31,7 @@ public struct SideEffect<S, E>: SideEffectProtocol where S: Equatable {
 
     public init<SE>(_ sideEffect: SE) where SE: SideEffectProtocol, SE.S == S, SE.E == E {
         _perform = sideEffect.perform
-        isNoop = false
+        isNoop = sideEffect.isNoop
     }
 
     fileprivate init() {
