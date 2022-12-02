@@ -120,8 +120,10 @@ extension Store {
             case .concurrent:
                 await withTaskGroup(of: Void.self) { group in
                     for sideEffect in groupSideEffect.sideEffects {
-                        group.addTask { [weak self] in
-                            await self?.perform(sideEffect)
+                        if !sideEffect.isNoop {
+                            group.addTask { [weak self] in
+                                await self?.perform(sideEffect)
+                            }
                         }
                     }
                     
