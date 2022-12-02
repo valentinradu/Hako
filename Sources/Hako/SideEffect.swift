@@ -58,9 +58,9 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
                 sideEffects: [SideEffect<S, E>]) {
         self.sideEffects = sideEffects
         self.strategy = strategy
-        self.mutation = .noop
+        mutation = .noop
     }
-    
+
     public init(strategy: SideEffectGroupStrategy = .serial,
                 sideEffects: [SideEffect<S, E>],
                 mutation: Mutation<S, E>) {
@@ -77,6 +77,20 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
         sideEffects += other.sideEffects
         if other.strategy == .concurrent {
             strategy = .concurrent
+        }
+
+        let oldMutation = mutation
+        let commonStrategy = strategy
+        mutation = Mutation { state in
+            let firstSideEffect = oldMutation.reduce(state: &state)
+            let secondSideEffect = other.mutation.reduce(state: &state)
+            return SideEffectGroup(
+                strategy: commonStrategy,
+                sideEffects: [
+                    SideEffect(firstSideEffect),
+                    SideEffect(secondSideEffect),
+                ]
+            )
         }
     }
 }
