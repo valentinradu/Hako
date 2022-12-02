@@ -52,11 +52,21 @@ public enum SideEffectGroupStrategy {
 public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
     private(set) var sideEffects: [SideEffect<S, E>]
     private(set) var strategy: SideEffectGroupStrategy
+    private(set) var mutation: Mutation<S, E>
 
     public init(strategy: SideEffectGroupStrategy = .serial,
                 sideEffects: [SideEffect<S, E>]) {
         self.sideEffects = sideEffects
         self.strategy = strategy
+        self.mutation = .noop
+    }
+    
+    public init(strategy: SideEffectGroupStrategy = .serial,
+                sideEffects: [SideEffect<S, E>],
+                mutation: Mutation<S, E>) {
+        self.sideEffects = sideEffects
+        self.strategy = strategy
+        self.mutation = mutation
     }
 
     public func perform(env _: E) async -> any MutationProtocol<S, E> {

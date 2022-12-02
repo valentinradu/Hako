@@ -116,6 +116,7 @@ extension Store {
                 for sideEffect in groupSideEffect.sideEffects {
                     await perform(sideEffect)
                 }
+                dispatch(groupSideEffect.mutation)
             case .concurrent:
                 await withTaskGroup(of: Void.self) { group in
                     for sideEffect in groupSideEffect.sideEffects {
@@ -123,6 +124,9 @@ extension Store {
                             await self?.perform(sideEffect)
                         }
                     }
+                    
+                    await group.waitForAll()
+                    dispatch(groupSideEffect.mutation)
                 }
             }
         default:
