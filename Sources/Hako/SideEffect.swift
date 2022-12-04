@@ -70,6 +70,10 @@ public struct SideEffectGroup<S, E>: SideEffectProtocol where S: Equatable {
     }
 
     public func perform(env: E) async -> any MutationProtocol<S, E> {
+        guard !sideEffects.isEmpty else {
+            return mutation
+        }
+
         switch strategy {
         case .serial:
             var mutations: [Mutation<S, E>] = []
