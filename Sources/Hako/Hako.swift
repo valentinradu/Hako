@@ -14,17 +14,17 @@ import Foundation
 ///
 /// Mutations drive the functional core of the store and are always
 /// performed serially on the main thread.
-public protocol Mutation: Hashable {}
+public protocol Mutation: Hashable, Sendable {}
 
 /// Side effects are operations that happen outside of the functional core
 /// of the store and ultimately lead to a mutation.
 /// Side effects are driving the imperative shell of the store. They're
 /// resolved to async `Task<Mutation, Error>`s and can access and modify
 /// the environment.
-public protocol SideEffect: Hashable {}
+public protocol SideEffect: Hashable, Sendable {}
 
-public enum ConcurrencyStrategy: Hashable {
-    public enum Priority: Hashable {
+public enum ConcurrencyStrategy: Hashable, Sendable {
+    public enum Priority: Hashable, Sendable {
         case medium
         case high
         case low
@@ -50,56 +50,21 @@ extension ConcurrencyStrategy.Priority {
 }
 
 /// Commands control how mutations and side effects are performed
-public indirect enum SideEffectCommand: Hashable {
+public indirect enum Command: Hashable, Sendable {
     case noop
-    case perform(sideEffect: any SideEffect)
-    case merge(strategy: Strategy = .serial,
-               whenDone: MutationCommand = .noop,
-               commands: [SideEffectCommand])
+    case performSideEffect(any SideEffect)
+    case performMutation(any Mutation)
+    case merge(strategy: ConcurrencyStrategy = .serial,
+               commands: [Command])
 
-    public static func == (lhs: SideEffectCommand, rhs: SideEffectCommand) -> Bool {
+    public static func == (lhs: Command, rhs: Command) -> Bool {
         switch (lhs, rhs) {
         case (.noop, .noop):
             return true
-        case let (.perform(lhsMutation), .perform(rhsMutation)):
+        case let (.performMutation(lhsMutation), .performMutation(rhsMutation)):
             return AnyHashable(lhsMutation) == AnyHashable(rhsMutation)
-        case let (.merge(lhsStrategy, lhsWhenDone, lhsCommands), .merge(rhsStrategy, rhsWhenDone, rhsCommands)):
-            return AnyHashable(lhsCommands) == AnyHashable(rhsCommands)
-                && AnyHashable(lhsStrategy) == AnyHashable(rhsStrategy)
-                && AnyHashable(lhsWhenDone) == AnyHashable(rhsWhenDone)
-        default:
-            return false
-        }
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        switch self {
-        case .noop:
-            hasher.combine(0)
-        case let .perform(mutation):
-            hasher.combine(1)
-            hasher.combine(AnyHashable(mutation))
-        case let .merge(strategy, whenDone, commands):
-            hasher.combine(2)
-            hasher.combine(commands)
-            hasher.combine(strategy)
-            hasher.combine(whenDone)
-        }
-    }
-}
-
-public indirect enum MutationCommand: Hashable {
-    case noop
-    case perform(mutation: any Mutation)
-    case merge(strategy: Strategy = .serial,
-               commands: [MutationCommand])
-
-    public static func == (lhs: MutationCommand, rhs: MutationCommand) -> Bool {
-        switch (lhs, rhs) {
-        case (.noop, .noop):
-            return true
-        case let (.perform(lhsMutation), .perform(rhsMutation)):
-            return AnyHashable(lhsMutation) == AnyHashable(rhsMutation)
+        case let (.performSideEffect(lhsSideEffect), .performSideEffect(rhsSideEffect)):
+            return AnyHashable(lhsSideEffect) == AnyHashable(rhsSideEffect)
         case let (.merge(lhsStrategy, lhsCommands), .merge(rhsStrategy, rhsCommands)):
             return AnyHashable(lhsCommands) == AnyHashable(rhsCommands)
                 && AnyHashable(lhsStrategy) == AnyHashable(rhsStrategy)
@@ -112,11 +77,14 @@ public indirect enum MutationCommand: Hashable {
         switch self {
         case .noop:
             hasher.combine(0)
-        case let .perform(mutation):
+        case let .performMutation(mutation):
             hasher.combine(1)
             hasher.combine(AnyHashable(mutation))
-        case let .merge(strategy, commands):
+        case let .performSideEffect(sideEffect):
             hasher.combine(2)
+            hasher.combine(AnyHashable(sideEffect))
+        case let .merge(strategy, commands):
+            hasher.combine(3)
             hasher.combine(commands)
             hasher.combine(strategy)
         }

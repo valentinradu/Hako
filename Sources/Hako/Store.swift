@@ -9,14 +9,26 @@ import Combine
 import Foundation
 
 @MainActor
-public class Store<S>: ObservableObject where S: Equatable {
+public class Store<S>: ObservableObject where S: Hashable {
+    public typealias StateReducer = (inout S, any Mutation) -> any SideEffect
+    public typealias SideEffectResolver = (any SideEffect) async throws -> any Mutation
+    public typealias ErrorTransformer = (any SideEffect, any Error) -> any Mutation
     @Published private var _state: S
-    private var _tasks: [UUID: Task<Void, Never>]
+    private var _tasks: [AnyHashable: Task<Void, Never>]
     private var _cancellables: Set<AnyCancellable>
+    private var _stateReducer: StateReducer
+    private var _sideEffectResolver: SideEffectResolver
+    private var _errorTransformer: ErrorTransformer
 
-    public init(state: S) {
+    public init(initialState: S,
+                stateReducer: @escaping StateReducer,
+                sideEffectResolver: @escaping SideEffectResolver,
+                errorTransformer: @escaping ErrorTransformer) {
         _tasks = [:]
-        _state = state
+        _state = initialState
+        _stateReducer = stateReducer
+        _sideEffectResolver = sideEffectResolver
+        _errorTransformer = errorTransformer
         _cancellables = []
     }
 
@@ -33,72 +45,48 @@ public extension Store {
     }
 }
 
+// MARK: Dispatching mutations and side effects
+
 public extension Store {
-    func perform(command: SideEffectCommand) async throws -> [any Mutation] {
-        switch command {
-        case .noop:
-            break
-        case let .perform(sideEffect):
-            let mutation = try await perform(sideEffect: sideEffect)
-            return [mutation]
-        case let .merge(strategy, whenDone, commands):
-            switch strategy {
-            case .serial:
-                var mutations: [any Mutation] = []
-                for command in commands {
-                    let others = try await perform(command: command)
-                    mutations.append(contentsOf: others)
-                }
-                mutations.append(whenDone)
-                return mutations
-            case let .concurrent(priority):
-                var mutations = try await withThrowingTaskGroup(of: [any Mutation]?.self,
-                                                                returning: [any Mutation].self) { [weak self] group in
-                    for command in commands {
-                        group.addTask(priority: priority.taskPriority) { [weak self] in
-                            try await self?.perform(command: command)
-                        }
-                    }
-
-                    var mutations: [any Mutation] = []
-                    while let result = await group.nextResult() {
-                        switch result {
-                        case .failure(error):
-                            break
-                        case let .success(other):
-                            if let other {
-                                mutations.append(contentsOf: other)
-                            }
-                        }
-                    }
-
-                    return mutations
-                }
-
-                mutations.append(whenDone)
-                return mutations
-            }
-        }
+    func dispatch(_ mutation: any Mutation) {
+        let command = perform(mutation: mutation)
+        _dispatch(command)
     }
 
-//    func dispatch(_ command: MutationCommand) {
-//        switch command {
-//        case .noop:
-//            break
-//        case let .perform(mutation):
-//            reduce(mutation)
-//        case .merge(strategy, commands):
-//            for command in commands {
-//                reduce(comm)
-//            }
-//        }
-//    }
+    func dispatch(_ sideEffect: any SideEffect) {
+        _dispatch(.performSideEffect(sideEffect))
+    }
+
+    private func _dispatch(_ command: Command) {
+        let task = Task.detached { [weak self] in
+            do {
+                var command = command
+                while let nextCommand = try await self?.perform(command: command), nextCommand != .noop, command != .noop {
+                    command = try await self?.perform(command: nextCommand) ?? .noop
+                }
+                await self?.removeTask(forKey: command)
+            } catch {
+                await self?.removeTask(forKey: command)
+                fatalError()
+            }
+        }
+        _tasks[command] = task
+    }
 }
 
 // MARK: Ingesting commands
 
 public extension Store {
-    func ingest(_ publisher: any Publisher<SideEffectCommand, Never>) {
+    func ingest(_ publisher: any Publisher<any SideEffect, Never>) {
+        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
+
+        publisher.sink { [weak self] in
+            self?.dispatch($0)
+        }
+        .store(in: &_cancellables)
+    }
+
+    func ingest(_ publisher: any Publisher<any Mutation, Never>) {
         precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
 
         publisher.sink { [weak self] in
@@ -108,33 +96,75 @@ public extension Store {
     }
 }
 
-// MARK: Dispatching actions
+// MARK: Performing mutations, side effects and commands
 
 private extension Store {
-    func reduce(mutation: any Mutation) -> any SideEffect {
-        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
+    func perform(command: Command) async throws -> Command {
+        switch command {
+        case .noop:
+            return .noop
+        case let .performSideEffect(sideEffect):
+            let mutationCommand = try await perform(sideEffect: sideEffect)
+            return mutationCommand
+        case let .performMutation(mutation):
+            let sideEffectCommand = perform(mutation: mutation)
+            return sideEffectCommand
+        case let .merge(strategy, commands):
+            guard !commands.isEmpty else {
+                return .noop
+            }
+
+            switch strategy {
+            case .serial:
+                var mutationCommands: [Command] = []
+                for command in commands where command != .noop {
+                    let others = try await perform(command: command)
+                    mutationCommands.append(others)
+                }
+                return .merge(strategy: strategy, commands: mutationCommands)
+            case let .concurrent(priority):
+                let mutationCommands = await withThrowingTaskGroup(of: Command?.self,
+                                                                   returning: Command.self) { [weak self] group in
+                    for command in commands where command != .noop {
+                        group.addTask(priority: priority.taskPriority) { [weak self] in
+                            try await self?.perform(command: command)
+                        }
+                    }
+
+                    var mutationCommands: [Command] = []
+                    while let result = await group.nextResult() {
+                        switch result {
+                        case let .failure(error):
+                            fatalError(error.localizedDescription)
+                        case let .success(other):
+                            if let other {
+                                mutationCommands.append(other)
+                            }
+                        }
+                    }
+
+                    return .merge(strategy: strategy, commands: mutationCommands)
+                }
+
+                return .merge(strategy: strategy, commands: [mutationCommands])
+            }
+        }
     }
-}
 
-// MARK: Performing side effects
+    func perform(mutation: any Mutation) -> Command {
+        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
+        return .performSideEffect(_stateReducer(&_state, mutation))
+    }
 
-private extension Store {
-    nonisolated func perform(sideEffect: any SideEffect) async throws -> any Mutation {}
+    func perform(sideEffect: any SideEffect) async throws -> Command {
+        try await .performMutation(_sideEffectResolver(sideEffect))
+    }
 }
 
 // MARK: Other utils
 
 private extension Store {
-    func removeTask(uuid: UUID) {
-        _tasks.removeValue(forKey: uuid)
-    }
-
-    func withManagedTask(_ run: @escaping () async -> Void) {
-        let uuid = UUID()
-        let task = Task.detached { [weak self] in
-            await run()
-            await self?.removeTask(uuid: uuid)
-        }
-        _tasks[uuid] = task
+    func removeTask(forKey key: any Hashable) {
+        _tasks.removeValue(forKey: AnyHashable(key))
     }
 }
