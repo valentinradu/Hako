@@ -2,195 +2,284 @@
 //  File.swift
 //
 //
-//  Created by Valentin Radu on 17/12/2022.
+//  Created by Valentin Radu on 08/03/2023.
 //
 
 import Foundation
+import SwiftUI
 
-@MainActor
-public class Store<State, SideEffect, Mutation>: ObservableObject
-    where State: Hashable & Sendable,
-    SideEffect: Hashable & Sendable,
-    Mutation: Hashable & Sendable {
-    private let _service: any Service<SideEffect, Mutation>
-    private let _reducer: any Reducer<SideEffect, Mutation, State>
+public class TaskPlanner<N> where N: Hashable {
+    private var _storage: [N: Task<Void, Error>]
 
-    public init(service: any Service<SideEffect, Mutation>,
-                reducer: any Reducer<SideEffect, Mutation, State>) {
-        _service = service
-        _reducer = reducer
+    public init() {
+        _storage = [:]
     }
 
-    public func dispatch(_ mutation: Mutation) {}
+    public func perform(_ name: N, action: @escaping () async throws -> Void) {
+        _storage[name]?.cancel()
+        let task = Task { [weak self] in
+            do {
+                try await action()
+            } catch {
+                self?._storage.removeValue(forKey: name)
+                throw error
+            }
+            self?._storage.removeValue(forKey: name)
+        }
+        _storage[name] = task
+    }
 
-    public func dispatch(_ sideEffect: SideEffect) async throws {}
+    public func cancel(_ name: N) {
+        if let task = _storage[name] {
+            task.cancel()
+        }
+    }
 
-    public var state: State {
-        _reducer.state
+    deinit {
+        for (_, task) in _storage {
+            task.cancel()
+        }
+    }
+}
+
+
+private enum StepResult {
+    case next
+    case stop
+}
+
+public struct Middleware<S> where S: Hashable {
+    private typealias Perform = (AnyHashable, StoreContext<S>) async -> StepResult
+
+    private let _perform: Perform
+
+    public init<A, E>(environment: E, perform: @escaping (A, E, StoreContext<S>) async -> Void) {
+        _perform = { action, context in
+            if let action = action as? A {
+                await perform(action, environment, context)
+                return .stop
+            }
+            return .next
+        }
+    }
+
+    fileprivate func perform<A>(action: A, context: StoreContext<S>) async -> StepResult where A: Hashable {
+        await _perform(action, context)
+    }
+}
+
+public struct Reducer<S> where S: Hashable {
+    private typealias Reduce = (inout S, AnyHashable) -> StepResult
+    private let _reduce: Reduce
+
+    public init<A>(_ reduce: @escaping (inout S, A) -> Void) where A: Hashable {
+        _reduce = { state, action in
+            if let action = action as? A {
+                reduce(&state, action)
+                return .stop
+            }
+            return .next
+        }
+    }
+
+    fileprivate func reduce<A>(state: inout S, action: A) -> StepResult where A: Hashable {
+        _reduce(&state, action)
+    }
+}
+
+public struct StoreContext<S> where S: Hashable {
+    public typealias FetchState = () -> S
+    public typealias Dispatch = (AnyHashable) -> Void
+    public typealias Cancel = (AnyHashable) -> Void
+
+    let fetchState: FetchState
+    let dispatch: Dispatch
+    let cancel: Cancel
+}
+
+@MainActor
+private protocol UnderlyingStoreProtocol<S>: AnyObject {
+    associatedtype S: Hashable
+
+    var state: S { get set }
+
+    func dispatch<A>(action: A) where A: Hashable
+    func cancel<A>(action: A) where A: Hashable
+    func add(middleware: Middleware<S>)
+    func add(reducer: Reducer<S>)
+}
+
+extension UnderlyingStoreProtocol {
+    func binding<A, V>(keyPath: KeyPath<S, V>,
+                       action: @escaping (V) -> A) -> Binding<V> where A: Hashable {
+        Binding { [self] in
+            state[keyPath: keyPath]
+        } set: { [self] value, _ in
+            dispatch(action: action(value))
+        }
+    }
+}
+
+private extension UnderlyingStoreProtocol {
+    var context: StoreContext<S> {
+        StoreContext(fetchState: { [self] in state },
+                     dispatch: { [self] in dispatch(action: $0) },
+                     cancel: { [self] in cancel(action: $0) })
     }
 }
 
 @MainActor
-public struct CompositeStore<State, State1, SideEffect1, Mutation1, State2, SideEffect2, Mutation2>
-    where State: Hashable & Sendable, State1: Hashable & Sendable, State2: Hashable & Sendable,
-    SideEffect1: Hashable & Sendable, SideEffect2: Hashable & Sendable,
-    Mutation1: Hashable & Sendable, Mutation2: Hashable & Sendable {
-    public typealias MetaReducer = (State1, State2) -> State
+private class RootStore<S>: UnderlyingStoreProtocol where S: Hashable {
+    var state: S
+    private var _reducers: [Reducer<S>]
+    private var _middlewares: [Middleware<S>]
+    private let _taskPlanner: TaskPlanner<AnyHashable>
 
-    private let _store: Store<State1, SideEffect1, Mutation1>
-    private let _other: Store<State2, SideEffect2, Mutation2>
-    private let _metaReducer: MetaReducer
+    public init(initialState: S) {
+        state = initialState
+        _reducers = []
+        _middlewares = []
+        _taskPlanner = .init()
+    }
 
-    public init(store: Store<State1, SideEffect1, Mutation1>,
-                other: Store<State2, SideEffect2, Mutation2>,
-                metaReducer: @escaping MetaReducer) {
-        _store = store
+    func dispatch<A>(action: A) where A: Hashable {
+        _taskPlanner.perform(action) { [unowned self] in
+            for middleware in _middlewares {
+                let stepResult = await middleware.perform(action: action, context: context)
+
+                switch stepResult {
+                case .next:
+                    continue
+                case .stop:
+                    return
+                }
+            }
+
+            for reducer in _reducers {
+                let stepResult = reducer.reduce(state: &state, action: action)
+
+                switch stepResult {
+                case .next:
+                    continue
+                case .stop:
+                    return
+                }
+            }
+        }
+    }
+
+    func cancel<A>(action: A) where A: Hashable {
+        _taskPlanner.cancel(action)
+    }
+
+    func add(middleware: Middleware<S>) {
+        _middlewares.append(middleware)
+    }
+
+    func add(reducer: Reducer<S>) {
+        _reducers.append(reducer)
+    }
+}
+
+@MainActor
+private class LensStore<S, OS>: UnderlyingStoreProtocol where S: Hashable, OS: Hashable {
+    var state: S {
+        set {
+            _other.state[keyPath: _stateKeyPath] = newValue
+        }
+        get {
+            _other.state[keyPath: _stateKeyPath]
+        }
+    }
+
+    private var _reducers: [Reducer<S>]
+    private var _middlewares: [Middleware<S>]
+    private let _taskPlanner: TaskPlanner<AnyHashable>
+
+    private let _other: Store<OS>
+    private let _stateKeyPath: WritableKeyPath<OS, S>
+
+    public init(other: Store<OS>,
+                stateKeyPath: WritableKeyPath<OS, S>) {
         _other = other
-        _metaReducer = metaReducer
+        _stateKeyPath = stateKeyPath
+        _reducers = []
+        _middlewares = []
+        _taskPlanner = .init()
     }
 
-    public func dispatch(_ mutation: Mutation1) {
-        _store.dispatch(mutation)
+    func dispatch<A>(action: A) where A: Hashable {
+        _taskPlanner.perform(action) { [unowned self] in
+            for middleware in _middlewares {
+                let stepResult = await middleware.perform(action: action, context: context)
+
+                switch stepResult {
+                case .next:
+                    continue
+                case .stop:
+                    return
+                }
+            }
+
+            for reducer in _reducers {
+                let stepResult = reducer.reduce(state: &state, action: action)
+
+                switch stepResult {
+                case .next:
+                    continue
+                case .stop:
+                    return
+                }
+            }
+
+            _other.dispatch(action: action)
+        }
     }
 
-    public func dispatch(_ sideEffect: SideEffect1) async throws {
-        try await _store.dispatch(sideEffect)
+    func cancel<A>(action: A) where A: Hashable {
+        _taskPlanner.cancel(action)
     }
 
-    public func dispatch(_ mutation: Mutation2) {
-        _other.dispatch(mutation)
+    func add(middleware: Middleware<S>) {
+        _middlewares.append(middleware)
     }
 
-    public func dispatch(_ sideEffect: SideEffect2) async throws {
-        try await _other.dispatch(sideEffect)
-    }
-
-    public var state: State {
-        _metaReducer(_store.state, _other.state)
+    func add(reducer: Reducer<S>) {
+        _reducers.append(reducer)
     }
 }
 
+@MainActor
+public class Store<S> where S: Hashable {
+    private var _underlyingStore: any UnderlyingStoreProtocol<S>
 
-//// MARK: Dispatching mutations and side effects
-//
-//public extension Store {
-//    func dispatch(_ mutation: any Mutation) {
-//        let command = perform(mutation: mutation)
-//        _dispatch(command)
-//    }
-//
-//    func dispatch(_ sideEffect: any SideEffect) {
-//        _dispatch(.performSideEffect(sideEffect))
-//    }
-//
-//    private func _dispatch(_ command: Command) {
-//        let task = Task.detached { [weak self] in
-//            do {
-//                var command = command
-//                while let nextCommand = try await self?.perform(command: command), nextCommand != .noop, command != .noop {
-//                    command = try await self?.perform(command: nextCommand) ?? .noop
-//                }
-//                await self?.removeTask(forKey: command)
-//            } catch {
-//                await self?.removeTask(forKey: command)
-//                fatalError()
-//            }
-//        }
-//        _tasks[command] = task
-//    }
-//}
-//
-//// MARK: Ingesting commands
-//
-//public extension Store {
-//    func ingest(_ publisher: any Publisher<any SideEffect, Never>) {
-//        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
-//
-//        publisher.sink { [weak self] in
-//            self?.dispatch($0)
-//        }
-//        .store(in: &_cancellables)
-//    }
-//
-//    func ingest(_ publisher: any Publisher<any Mutation, Never>) {
-//        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
-//
-//        publisher.sink { [weak self] in
-//            self?.dispatch($0)
-//        }
-//        .store(in: &_cancellables)
-//    }
-//}
-//
-//// MARK: Performing mutations, side effects and commands
-//
-//private extension Store {
-//    func perform(command: Command) async throws -> Command {
-//        switch command {
-//        case .noop:
-//            return .noop
-//        case let .performSideEffect(sideEffect):
-//            let mutationCommand = try await perform(sideEffect: sideEffect)
-//            return mutationCommand
-//        case let .performMutation(mutation):
-//            let sideEffectCommand = perform(mutation: mutation)
-//            return sideEffectCommand
-//        case let .merge(strategy, commands):
-//            guard !commands.isEmpty else {
-//                return .noop
-//            }
-//
-//            switch strategy {
-//            case .serial:
-//                var mutationCommands: [Command] = []
-//                for command in commands where command != .noop {
-//                    let others = try await perform(command: command)
-//                    mutationCommands.append(others)
-//                }
-//                return .merge(strategy: strategy, commands: mutationCommands)
-//            case let .concurrent(priority):
-//                let mutationCommands = await withThrowingTaskGroup(of: Command?.self,
-//                                                                   returning: Command.self) { [weak self] group in
-//                    for command in commands where command != .noop {
-//                        group.addTask(priority: priority.taskPriority) { [weak self] in
-//                            try await self?.perform(command: command)
-//                        }
-//                    }
-//
-//                    var mutationCommands: [Command] = []
-//                    while let result = await group.nextResult() {
-//                        switch result {
-//                        case let .failure(error):
-//                            fatalError(error.localizedDescription)
-//                        case let .success(other):
-//                            if let other {
-//                                mutationCommands.append(other)
-//                            }
-//                        }
-//                    }
-//
-//                    return .merge(strategy: strategy, commands: mutationCommands)
-//                }
-//
-//                return .merge(strategy: strategy, commands: [mutationCommands])
-//            }
-//        }
-//    }
-//
-//    func perform(mutation: any Mutation) -> Command {
-//        precondition(Thread.isMainThread, "\(#function) should always be called on the main thread")
-//        return .performSideEffect(_stateReducer(&_state, mutation))
-//    }
-//
-//    func perform(sideEffect: any SideEffect) async throws -> Command {
-//        try await .performMutation(_sideEffectResolver(sideEffect))
-//    }
-//}
-//
-//// MARK: Other utils
-//
-//private extension Store {
-//    func removeTask(forKey key: any Hashable) {
-//        _tasks.removeValue(forKey: AnyHashable(key))
-//    }
-//}
+    public fileprivate(set) var state: S {
+        set {
+            _underlyingStore.state = newValue
+        }
+        get {
+            _underlyingStore.state
+        }
+    }
+
+    public init(initialState: S) {
+        _underlyingStore = RootStore(initialState: initialState)
+    }
+
+    private init<OS>(other: Store<OS>,
+                     stateKeyPath: WritableKeyPath<OS, S>) {
+        _underlyingStore = LensStore(other: other, stateKeyPath: stateKeyPath)
+    }
+
+    public func add(middleware: Middleware<S>) {
+        _underlyingStore.add(middleware: middleware)
+    }
+
+    public func lens<OS>(stateKeyPath: WritableKeyPath<S, OS>) -> Store<OS> {
+        Store<OS>(other: self, stateKeyPath: stateKeyPath)
+    }
+
+    public func dispatch<A>(action: A) where A: Hashable {
+        _underlyingStore.dispatch(action: action)
+    }
+}

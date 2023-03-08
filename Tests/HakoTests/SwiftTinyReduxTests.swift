@@ -11,4 +11,5 @@ import XCTest
 
 @MainActor
 final class HakoTests: XCTestCase {
+    func test() {}
 }
